@@ -14,6 +14,10 @@
 ## 主要功能
 感谢蚂蚁森林对绿化事业的贡献，快速收取蚂蚁森林能量，也为祖国的绿化事业出一份微薄之力。
 
+## 下载
+- **[Sure-Xu-Normal-1.0.0.apk](apk/Sure-Xu-Normal-1.0.0.apk)**（15.6MB，已签名，[Release 页面](https://github.com/755596985/Sure-Xu/releases/tag/v1.0.0)）
+- 安装前请先卸载同包名旧版本（如有）；需要 **root + LSPosed** 框架才能生效
+
 ## Sure-Xu 在 Sesame-M 基础上的改动
 1. **更换 applicationId 为 `com.surexu.sesame`**，应用名 Sure-Xu，可与官方版及其它分支共存；
 2. **全新奶白色（Cream）主题**：`CreamTheme.kt` 定义整套暖米白配色（背景 `#FAF5EC` + 暖橙主色），全部 miuix 页面（主页/设置/日志/关于/扩展/好友统计/弹窗）统一注入，状态栏/导航栏图标固定深色保证可读；
