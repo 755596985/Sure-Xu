@@ -1,8 +1,8 @@
-# Sesame-M（芝麻粒-M）
+# Sure-Xu
 
-[![License](https://img.shields.io/github/license/aw1y2z/Sesame-M.svg)](LICENSE)
+[![License](https://img.shields.io/github/license/755596985/Sure-Xu.svg)](LICENSE)
 
-> 芝麻粒系列的又一个分支版本，基于芝麻粒生态做个人向维护与改造。
+> 基于 [Sesame-M（芝麻粒-M）](https://github.com/aw1y2z/Sesame-M) 的个人定制版，芝麻粒系列分支之一。
 
 本项目可与其它同源的芝麻粒模块共存安装。
 
@@ -14,12 +14,33 @@
 ## 主要功能
 感谢蚂蚁森林对绿化事业的贡献，快速收取蚂蚁森林能量，也为祖国的绿化事业出一份微薄之力。
 
-## 本项目的主要改动
+## Sure-Xu 在 Sesame-M 基础上的改动
+1. **更换 applicationId 为 `com.surexu.sesame`**，应用名 Sure-Xu，可与官方版及其它分支共存；
+2. **全新奶白色（Cream）主题**：`CreamTheme.kt` 定义整套暖米白配色（背景 `#FAF5EC` + 暖橙主色），全部 miuix 页面（主页/设置/日志/关于/扩展/好友统计/弹窗）统一注入，状态栏/导航栏图标固定深色保证可读；
+3. **内置签名配置**：`app/keystore.properties`（不入库）+ `signingConfigs`，`assembleNormalRelease` 直接出已签名包；
+4. **版本策略本地化**：默认 `1.0.0`，支持 `-Pversion=x.y.z` / `-PversionCode=N` 覆盖，无 git 环境也能正常构建；
+5. **构建仓库走国内镜像**（阿里云/腾讯云），中国大陆网络可直连编译。
+
+## 上游 Sesame-M 的主要改动
 1. **更换 applicationId 为 `io.github.aw1y2z.sesame`**，实现与官方版芝麻粒（`io.github.lazyimmortal.sesame`）等同源模块共存安装、互不覆盖；
 2. **迁移至 libxposed API 102**；
 3. **整体重写 UI**：全面迁移至 Jetpack Compose + [Miuix](https://github.com/compose-miuix-ui/miuix)（Xiaomi HyperOS 风格），界面由 Android Support/XML 旧实现重构；
 4. **修复若干历史问题**：native 库解压、日志分项开关失效、Android 15+ 目录写入兼容等；
 5. **升级构建与依赖链**：compileSdk 34→37、minSdk 21→26，AGP 9.2 / Gradle 9.4.1 / Kotlin 2.4，AndroidX 化。
+
+## 本地构建
+```bash
+# 需要 JDK 17+、Android SDK（platforms/android-37、build-tools）
+./gradlew assembleNormalRelease
+# 产物：app/build/outputs/apk/normal/release/Sure-Xu-Normal-x.y.z.apk（已用本地 keystore 签名）
+```
+首次构建前需准备 `app/keystore.properties`：
+```properties
+storeFile=sesame-release.jks
+storePassword=你的口令
+keyAlias=你的别名
+keyPassword=你的口令
+```
 
 ## 技术栈 / 使用的框架
 - **模块运行框架**: [libxposed](https://github.com/libxposed/api) API 102,由 [LSPosed](https://github.com/LSPosed/LSPosed) 等兼容框架加载
@@ -37,7 +58,7 @@
 6. 本 APP 如无意中侵犯了某个媒体或个人的知识产权，请来信或来电告之，作者将立即删除。
 
 ## 授权说明
-本项目基于 [Dragon813 版 Sesame-GR](https://github.com/Dragon813/Sesame-GR)、[TKaxv-7S 版 Sesame](https://github.com/SenOffical/Sesame-TK)、[constanline 版 XQuickEnergy](https://github.com/constanline/XQuickEnergy) 与 [pansong291 版 XQuickEnergy](https://github.com/pansong291/XQuickEnergy) 开发。
+本项目基于 [aw1y2z 版 Sesame-M](https://github.com/aw1y2z/Sesame-M) 修改而来，并沿其源流基于 [Dragon813 版 Sesame-GR](https://github.com/Dragon813/Sesame-GR)、[TKaxv-7S 版 Sesame](https://github.com/SenOffical/Sesame-TK)、[constanline 版 XQuickEnergy](https://github.com/constanline/XQuickEnergy) 与 [pansong291 版 XQuickEnergy](https://github.com/pansong291/XQuickEnergy) 开发。
 
 本项目采用 [MIUIX](https://github.com/compose-miuix-ui/miuix) 提供 Xiaomi HyperOS 设计风格的组件库，并基于 [libxposed](https://github.com/libxposed/api) API 102 运行于 LSPosed 框架。
 
