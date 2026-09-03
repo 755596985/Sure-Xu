@@ -26,10 +26,12 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -47,7 +49,9 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -65,8 +69,6 @@ import com.surexu.sesame.util.Statistics.DataType
 import com.surexu.sesame.util.Statistics.TimeType
 import com.surexu.sesame.util.ToastUtil
 import com.surexu.sesame.util.idMap.UserIdMap
-import top.yukonga.miuix.kmp.basic.NavigationBar
-import top.yukonga.miuix.kmp.basic.NavigationBarItem
 import top.yukonga.miuix.kmp.basic.Scaffold
 import top.yukonga.miuix.kmp.basic.SmallTitle
 import top.yukonga.miuix.kmp.basic.Switch
@@ -249,32 +251,16 @@ fun MainScreen(activity: MiuixMainActivity) {
 
     Scaffold(
         bottomBar = {
-            NavigationBar {
-                NavigationBarItem(
-                    selected = selectedTab == 0,
-                    onClick = { selectedTab = 0 },
-                    icon = Icons.Filled.Home,
-                    label = "首页"
-                )
-                NavigationBarItem(
-                    selected = selectedTab == 1,
-                    onClick = { selectedTab = 1 },
-                    icon = Icons.Filled.Description,
-                    label = "日志"
-                )
-                NavigationBarItem(
-                    selected = selectedTab == 2,
-                    onClick = { selectedTab = 2 },
-                    icon = Icons.Filled.Tune,
-                    label = "配置"
-                )
-                NavigationBarItem(
-                    selected = selectedTab == 3,
-                    onClick = { selectedTab = 3 },
-                    icon = Icons.Filled.Settings,
-                    label = "设置"
-                )
-            }
+            FloatingNavBar(
+                items = listOf(
+                    NavBarTab("首页", Icons.Filled.Home),
+                    NavBarTab("日志", Icons.Filled.Description),
+                    NavBarTab("配置", Icons.Filled.Tune),
+                    NavBarTab("设置", Icons.Filled.Settings),
+                ),
+                selected = selectedTab,
+                onSelect = { selectedTab = it },
+            )
         },
         containerColor = MiuixTheme.colorScheme.surface
     ) { padding ->
@@ -295,6 +281,69 @@ fun MainScreen(activity: MiuixMainActivity) {
     }
 }
 
+/** 悬浮导航栏的条目定义 */
+data class NavBarTab(val label: String, val icon: ImageVector)
+
+/**
+ * 悬浮拟态底部导航栏。
+ *
+ * 与背景同色的拟态胶囊从奶白底面上"浮起"，两侧留边、底部悬空，
+ * 选中项以凹陷槽 + 暖橙高亮呈现，形成软按压的交互隐喻。
+ */
+@Composable
+fun FloatingNavBar(
+    items: List<NavBarTab>,
+    selected: Int,
+    onSelect: (Int) -> Unit,
+) {
+    Box(
+        Modifier
+            .fillMaxWidth()
+            .navigationBarsPadding()
+            .padding(horizontal = 22.dp, vertical = 10.dp)
+    ) {
+        Row(
+            Modifier
+                .fillMaxWidth()
+                .neuRaised(RoundedCornerShape(30.dp), 10.dp)
+                .padding(horizontal = 10.dp, vertical = 8.dp),
+            horizontalArrangement = Arrangement.SpaceAround,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            items.forEachIndexed { index, tab ->
+                val isSelected = index == selected
+                Column(
+                    Modifier
+                        .clip(RoundedCornerShape(20.dp))
+                        .then(
+                            if (isSelected) Modifier.neuPressed(RoundedCornerShape(20.dp))
+                            else Modifier
+                        )
+                        .clickable { onSelect(index) }
+                        .padding(horizontal = 18.dp, vertical = 8.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    val tint =
+                        if (isSelected) MiuixTheme.colorScheme.primary
+                        else MiuixTheme.colorScheme.onSurfaceVariantSummary
+                    Image(
+                        imageVector = tab.icon,
+                        contentDescription = tab.label,
+                        modifier = Modifier.size(23.dp),
+                        colorFilter = androidx.compose.ui.graphics.ColorFilter.tint(tint)
+                    )
+                    Spacer(Modifier.height(3.dp))
+                    Text(
+                        text = tab.label,
+                        fontSize = 11.sp,
+                        color = tint
+                    )
+                }
+            }
+        }
+    }
+}
+
 @Composable
 fun HomeTab(activity: MiuixMainActivity) {
     val context = LocalContext.current
@@ -303,51 +352,66 @@ fun HomeTab(activity: MiuixMainActivity) {
     val version = ViewAppInfo.getAppVersion()
 
     Text(
-        text = "Sesame-M",
-        fontSize = 32.sp,
+        text = "Sure-Xu",
+        fontSize = 34.sp,
         fontWeight = FontWeight.Bold,
         color = MiuixTheme.colorScheme.onBackground,
         modifier = Modifier.padding(top = 8.dp, bottom = 4.dp)
     )
     Spacer(Modifier.height(16.dp))
 
-    Box(
+    // 拟态状态卡：与背景同色，靠光影浮起；右侧图标槽为凹陷圆
+    Row(
         Modifier
             .fillMaxWidth()
-            .background(Color(0xFFE8F5E9), RoundedCornerShape(16.dp))
-            .padding(16.dp)
+            .neuRaised(RoundedCornerShape(26.dp), 8.dp)
+            .padding(20.dp),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
     ) {
-        Row(
-            Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
+        Column {
+            val statusColor =
+                if (activated) MiuixTheme.colorScheme.secondary
+                else MiuixTheme.colorScheme.onSurfaceVariantSummary
+            Text(
+                text = if (activated) "已激活" else "已关闭",
+                fontSize = 24.sp,
+                fontWeight = FontWeight.Bold,
+                color = statusColor
+            )
+            Spacer(Modifier.height(4.dp))
+            Text(
+                text = "$version (${com.surexu.sesame.BuildConfig.VERSION_CODE})",
+                fontSize = 14.sp,
+                color = MiuixTheme.colorScheme.onSurfaceSecondary
+            )
+            Spacer(Modifier.height(2.dp))
+            Text(
+                text = "API 102",
+                fontSize = 14.sp,
+                color = MiuixTheme.colorScheme.onSurfaceSecondary
+            )
+        }
+        Box(
+            Modifier
+                .size(68.dp)
+                .neuPressed(CircleShape),
+            contentAlignment = Alignment.Center
         ) {
-            Column {
-                Text(
-                    text = if (activated) "已激活" else "已关闭",
-                    fontSize = 24.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = Color(0xFF2E7D32)
-                )
-                Spacer(Modifier.height(4.dp))
-                Text(
-                    text = "$version (${com.surexu.sesame.BuildConfig.VERSION_CODE})",
-                    fontSize = 14.sp,
-                    color = Color(0xFF2E7D32)
-                )
-                Text(
-                    text = "API 102",
-                    fontSize = 14.sp,
-                    color = Color(0xFF2E7D32)
-                )
-            }
             if (activated) {
                 Image(
                     imageVector = Icons.Filled.CheckCircle,
                     contentDescription = null,
-                    modifier = Modifier.size(48.dp),
-                    alignment = Alignment.Center,
-                    colorFilter = androidx.compose.ui.graphics.ColorFilter.tint(Color(0xFF2E7D32))
+                    modifier = Modifier.size(40.dp),
+                    colorFilter = androidx.compose.ui.graphics.ColorFilter.tint(
+                        MiuixTheme.colorScheme.secondary
+                    )
+                )
+            } else {
+                Box(
+                    Modifier
+                        .size(16.dp)
+                        .neuRaised(CircleShape, 2.dp)
                 )
             }
         }
@@ -631,8 +695,8 @@ fun CardColumn(content: @Composable ColumnScope.() -> Unit) {
     Column(
         Modifier
             .fillMaxWidth()
-            .background(MiuixTheme.colorScheme.surfaceContainer, RoundedCornerShape(16.dp))
-            .padding(horizontal = 16.dp, vertical = 8.dp)
+            .neuRaised(RoundedCornerShape(24.dp), 5.dp)
+            .padding(horizontal = 16.dp, vertical = 10.dp)
     ) {
         content()
     }

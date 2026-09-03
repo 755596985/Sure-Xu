@@ -1,90 +1,71 @@
 # Sure-Xu
 
 [![License](https://img.shields.io/github/license/755596985/Sure-Xu.svg)](LICENSE)
+[![Release](https://img.shields.io/github/v/release/755596985/Sure-Xu)](https://github.com/755596985/Sure-Xu/releases)
 
-> 基于 [Sesame-M（芝麻粒-M）](https://github.com/aw1y2z/Sesame-M) 的个人定制版，芝麻粒系列分支之一。
+> **拟态奶白 · 悬浮导航 · 温柔的芝麻粒**
+>
+> Sure-Xu 是芝麻粒系列的个人定制分支——在开源生态的能力之上，用一套完整的**拟态（Neumorphism / Soft UI）奶白设计语言**重新诠释界面：所有元素与背景同色，仅靠柔和的双向光照塑造体积，悬浮式底部导航栏像一枚浮在奶白底面上的胶囊。
 
-本项目可与其它同源的芝麻粒模块共存安装。
+## 界面特色
 
-## 为了大家的资金安全与个人信息安全，强烈建议
-1. 不要使用任何未开放源代码的修改版！
-2. 不要使用任何未开放源代码的修改版！！
-3. 不要使用任何未开放源代码的修改版！！！
-
-## 主要功能
-感谢蚂蚁森林对绿化事业的贡献，快速收取蚂蚁森林能量，也为祖国的绿化事业出一份微薄之力。
+| 特性 | 说明 |
+| --- | --- |
+| 🥛 **拟态奶白主题** | 全局暖米白基色（`#FAF5EC`），凸起面左上高光、右下柔影；选中项以凹陷槽呈现"软按压"隐喻 |
+| 🫧 **悬浮底部导航** | 四枚导航项（首页 / 日志 / 配置 / 设置）收进一枚两侧留边的拟态胶囊，选中项凹陷 + 暖橙高亮 |
+| 🎨 **全新图标** | 奶白拟态容器 + 暖橙芝麻粒种子，与应用主题浑然一体 |
+| 📖 **重写的关于页** | 项目介绍、版本下载、开源许可一目了然 |
 
 ## 下载
-- **[Sure-Xu-Normal-1.0.0.apk](apk/Sure-Xu-Normal-1.0.0.apk)**（15.6MB，已签名，[Release 页面](https://github.com/755596985/Sure-Xu/releases/tag/v1.0.0)）
-- 安装前请先卸载同包名旧版本（如有）；需要 **root + LSPosed** 框架才能生效
 
-## Sure-Xu 在 Sesame-M 基础上的改动
-1. **更换 applicationId 为 `com.surexu.sesame`**，应用名 Sure-Xu，可与官方版及其它分支共存；
-2. **全新奶白色（Cream）主题**：`CreamTheme.kt` 定义整套暖米白配色（背景 `#FAF5EC` + 暖橙主色），全部 miuix 页面（主页/设置/日志/关于/扩展/好友统计/弹窗）统一注入，状态栏/导航栏图标固定深色保证可读；
-3. **内置签名配置**：`app/keystore.properties`（不入库）+ `signingConfigs`，`assembleNormalRelease` 直接出已签名包；
-4. **版本策略本地化**：默认 `1.0.0`，支持 `-Pversion=x.y.z` / `-PversionCode=N` 覆盖，无 git 环境也能正常构建；
-5. **构建仓库走国内镜像**（阿里云/腾讯云），中国大陆网络可直连编译。
+- **[apk/Sure-Xu-Normal-1.1.0.apk](apk/Sure-Xu-Normal-1.1.0.apk)**（[全部版本](https://github.com/755596985/Sure-Xu/releases)）
+- 需要 **root + LSPosed** 框架方可生效；安装前请卸载同包名旧版本（如有）
 
-## 上游 Sesame-M 的主要改动
-1. **更换 applicationId 为 `io.github.aw1y2z.sesame`**，实现与官方版芝麻粒（`io.github.lazyimmortal.sesame`）等同源模块共存安装、互不覆盖；
-2. **迁移至 libxposed API 102**；
-3. **整体重写 UI**：全面迁移至 Jetpack Compose + [Miuix](https://github.com/compose-miuix-ui/miuix)（Xiaomi HyperOS 风格），界面由 Android Support/XML 旧实现重构；
-4. **修复若干历史问题**：native 库解压、日志分项开关失效、Android 15+ 目录写入兼容等；
-5. **升级构建与依赖链**：compileSdk 34→37、minSdk 21→26，AGP 9.2 / Gradle 9.4.1 / Kotlin 2.4，AndroidX 化。
+## 快速上手
+
+1. 安装 APK，在 LSPosed 中启用 Sure-Xu 模块，作用域勾选**支付宝**
+2. 强制停止支付宝后重新打开，模块自动注入
+3. 打开 Sure-Xu App：**首页**看运行状态与数据统计 → **配置**里调任务参数 → **日志**里查收执行记录
+
+主要能力（继承自芝麻粒生态）：蚂蚁森林能量收取/浇水、庄园喂养与任务、海洋、果园、运动等自动化，全部任务可在配置页独立开关。
 
 ## 本地构建
+
 ```bash
-# 需要 JDK 17+、Android SDK（platforms/android-37、build-tools）
+# 环境：JDK 17+ / Android SDK（platforms;android-37, build-tools）
 ./gradlew assembleNormalRelease
-# 产物：app/build/outputs/apk/normal/release/Sure-Xu-Normal-x.y.z.apk（已用本地 keystore 签名）
+# 产物：app/build/outputs/apk/normal/release/Sure-Xu-Normal-x.y.z.apk（已签名）
 ```
-首次构建前需准备 `app/keystore.properties`：
+
+签名读取 `app/keystore.properties`（不入库，格式见下），首次克隆后需自备：
+
 ```properties
-storeFile=sesame-release.jks
+storeFile=your-release.jks
 storePassword=你的口令
 keyAlias=你的别名
 keyPassword=你的口令
 ```
 
-## 技术栈 / 使用的框架
-- **模块运行框架**: [libxposed](https://github.com/libxposed/api) API 102,由 [LSPosed](https://github.com/LSPosed/LSPosed) 等兼容框架加载
-- **UI**: Jetpack Compose + [Miuix](https://github.com/compose-miuix-ui/miuix)(Xiaomi HyperOS 设计风格组件库)
-- **网络**: OkHttp、NanoHTTPD
-- **JSON / 日志 / 注解**: Jackson、XLog、Lombok
-- **构建**: Gradle 9.4 / AGP 9.2 / Kotlin 2.4 / JDK 17
+## 技术栈
 
-## 使用说明
-1. 本 APP 是为了学习研究用，不得进行任何形式的转发、发布、传播。
-2. 请于 24 小时内卸载本 APP。若使用期间造成任何损失，作者不负任何责任。
-3. 本 APP 不篡改、不修改、不获取任何个人信息及其支付宝信息。
-4. 本 APP 使用者因为违反本声明的规定而触犯中华人民共和国法律的，一切后果自负，作者不承担任何责任。
-5. 凡以任何方式直接、间接使用 APP 者，视为自愿接受本声明的约束。
-6. 本 APP 如无意中侵犯了某个媒体或个人的知识产权，请来信或来电告之，作者将立即删除。
+- **模块框架**：[libxposed](https://github.com/libxposed/api) API 102（LSPosed 加载）
+- **UI**：Jetpack Compose + [Miuix](https://github.com/compose-miuix-ui/miuix)，叠加自研拟态设计层（`Neumorphic.kt`）
+- **核心逻辑**：沿用 Sesame-M 任务模型（`model/task/*`），JNI 桥接保留 `io.github.lazyimmortal.sesame.util.LibraryUtil`（libsesame.so 符号绑定，不可改名）
+- **构建**：Gradle 9.4 / AGP 9.2 / Kotlin 2.4，仓库指向国内镜像，大陆网络可直连编译
+
+## 使用条款（沿用上游）
+
+1. 本项目为学习研究用途，不得用于任何形式的商业行为。
+2. 使用者因违反本声明规定而触犯法律的，后果自负，作者不承担责任。
+3. 本模块完全免费开源，请勿二次贩卖。
 
 ## 授权说明
+
 本项目基于 [aw1y2z 版 Sesame-M](https://github.com/aw1y2z/Sesame-M) 修改而来，并沿其源流基于 [Dragon813 版 Sesame-GR](https://github.com/Dragon813/Sesame-GR)、[TKaxv-7S 版 Sesame](https://github.com/SenOffical/Sesame-TK)、[constanline 版 XQuickEnergy](https://github.com/constanline/XQuickEnergy) 与 [pansong291 版 XQuickEnergy](https://github.com/pansong291/XQuickEnergy) 开发。
 
-本项目采用 [MIUIX](https://github.com/compose-miuix-ui/miuix) 提供 Xiaomi HyperOS 设计风格的组件库，并基于 [libxposed](https://github.com/libxposed/api) API 102 运行于 LSPosed 框架。
-
-遵循前述所有基于库的协议，并**禁止**用于任何商业用途、禁止二次修改后**闭源**发布。
-
-第三方组件及其对应的许可证原文已收录于 [licenses/](licenses/) 目录：
-
-| 组件 / 项目 | 许可证 | 文件 |
-| --- | --- | --- |
-| 本项目自身 | GPL-3.0 | [LICENSE](LICENSE) |
-| [Dragon813/Sesame-GR](https://github.com/Dragon813/Sesame-GR) | GPL-3.0 | [licenses/LICENSE-dragon813-sesame-gr.txt](licenses/LICENSE-dragon813-sesame-gr.txt) |
-| [LSPosed/LSPosed](https://github.com/LSPosed/LSPosed) | GPL-3.0 | [licenses/LICENSE-lsposed.txt](licenses/LICENSE-lsposed.txt) |
-| [constanline/XQuickEnergy](https://github.com/constanline/XQuickEnergy) | Apache-2.0 | [licenses/LICENSE-xquickenergy-constanline.txt](licenses/LICENSE-xquickenergy-constanline.txt) |
-| [pansong291/XQuickEnergy](https://github.com/pansong291/XQuickEnergy) | Apache-2.0 | [licenses/LICENSE-xquickenergy-pansong291.txt](licenses/LICENSE-xquickenergy-pansong291.txt) |
-| [compose-miuix-ui/miuix](https://github.com/compose-miuix-ui/miuix) | Apache-2.0 | [licenses/LICENSE-miuix.txt](licenses/LICENSE-miuix.txt) |
-| [libxposed/api](https://github.com/libxposed/api) | Apache-2.0 | [licenses/LICENSE-libxposed-api.txt](licenses/LICENSE-libxposed-api.txt) |
-
-## 特别说明
-- 本模块完全免费开源，没有任何收费，请勿二次贩卖。
-- 本项目**不支持**合并任何通过修改数据而**实际获利**的功能 PR。
-- 鉴于项目的特殊性，本项目可能在任何时间**停止更新**或**删除**。
+采用 **GPL-3.0** 完整开源：**禁止**商业用途，**禁止**二次修改后闭源发布。第三方组件许可证原文见 [licenses/](licenses/) 目录。
 
 ## 特别感谢
-- 感谢芝麻粒生态的维护者与贡献者们（TKaxv-7S、Dragon813、LazyImmortal、Fansirsqi 等）的无私付出。
 
+- 芝麻粒生态的维护者与贡献者（TKaxv-7S、Dragon813、LazyImmortal、Fansirsqi、aw1y2z 等）
+- [Miuix](https://github.com/compose-miuix-ui/miuix) 与 [libxposed](https://github.com/libxposed/api) 的开发者们
