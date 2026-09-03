@@ -38,10 +38,12 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.Home
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Tune
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -358,14 +360,14 @@ fun HomeTab(activity: MiuixMainActivity) {
         color = MiuixTheme.colorScheme.onBackground,
         modifier = Modifier.padding(top = 8.dp, bottom = 4.dp)
     )
-    Spacer(Modifier.height(16.dp))
+    Spacer(Modifier.height(14.dp))
 
-    // 拟态状态卡：与背景同色，靠光影浮起；右侧图标槽为凹陷圆
+    // 拟态状态卡（紧凑版）：与背景同色，靠光影浮起；右侧图标槽为凹陷圆
     Row(
         Modifier
             .fillMaxWidth()
-            .neuRaised(RoundedCornerShape(26.dp), 8.dp)
-            .padding(20.dp),
+            .neuRaised(RoundedCornerShape(20.dp), 6.dp)
+            .padding(horizontal = 16.dp, vertical = 12.dp),
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically
     ) {
@@ -375,26 +377,20 @@ fun HomeTab(activity: MiuixMainActivity) {
                 else MiuixTheme.colorScheme.onSurfaceVariantSummary
             Text(
                 text = if (activated) "已激活" else "已关闭",
-                fontSize = 24.sp,
+                fontSize = 18.sp,
                 fontWeight = FontWeight.Bold,
                 color = statusColor
             )
-            Spacer(Modifier.height(4.dp))
-            Text(
-                text = "$version (${com.surexu.sesame.BuildConfig.VERSION_CODE})",
-                fontSize = 14.sp,
-                color = MiuixTheme.colorScheme.onSurfaceSecondary
-            )
             Spacer(Modifier.height(2.dp))
             Text(
-                text = "API 102",
-                fontSize = 14.sp,
-                color = MiuixTheme.colorScheme.onSurfaceSecondary
+                text = "$version · API 102",
+                fontSize = 12.sp,
+                color = MiuixTheme.colorScheme.onSurfaceVariantSummary
             )
         }
         Box(
             Modifier
-                .size(68.dp)
+                .size(48.dp)
                 .neuPressed(CircleShape),
             contentAlignment = Alignment.Center
         ) {
@@ -402,7 +398,7 @@ fun HomeTab(activity: MiuixMainActivity) {
                 Image(
                     imageVector = Icons.Filled.CheckCircle,
                     contentDescription = null,
-                    modifier = Modifier.size(40.dp),
+                    modifier = Modifier.size(28.dp),
                     colorFilter = androidx.compose.ui.graphics.ColorFilter.tint(
                         MiuixTheme.colorScheme.secondary
                     )
@@ -410,12 +406,22 @@ fun HomeTab(activity: MiuixMainActivity) {
             } else {
                 Box(
                     Modifier
-                        .size(16.dp)
+                        .size(13.dp)
                         .neuRaised(CircleShape, 2.dp)
                 )
             }
         }
     }
+    Spacer(Modifier.height(16.dp))
+
+    SmallTitle(text = "数据统计")
+    CardColumn {
+        StatisticsTable()
+    }
+    Spacer(Modifier.height(16.dp))
+
+    // 随机一言：点击整卡换一句
+    HitokotoCard()
     Spacer(Modifier.height(16.dp))
 
     SmallTitle(text = "模块状态")
@@ -427,12 +433,111 @@ fun HomeTab(activity: MiuixMainActivity) {
         StatusRow("系统架构", Build.SUPPORTED_ABIS?.firstOrNull() ?: "")
     }
     Spacer(Modifier.height(16.dp))
+}
 
-    SmallTitle(text = "数据统计")
-    CardColumn {
-        StatisticsTable()
+/** 一言（Hitokoto）客户端：短超时，避免阻塞首页 */
+private val hitokotoClient by lazy {
+    okhttp3.OkHttpClient.Builder()
+        .connectTimeout(java.util.concurrent.TimeUnit.SECONDS.toMillis(5), java.util.concurrent.TimeUnit.MILLISECONDS)
+        .readTimeout(java.util.concurrent.TimeUnit.SECONDS.toMillis(5), java.util.concurrent.TimeUnit.MILLISECONDS)
+        .build()
+}
+
+private const val HITOKOTO_URL = "https://v1.hitokoto.cn/?encode=json"
+
+/**
+ * 随机一言卡片：拟态表面 + 点击刷新。
+ * 数据来自 hitokoto.cn；网络不可用时静默保留上一句（首次为内置句）。
+ */
+@Composable
+fun HitokotoCard() {
+    var sentence by remember { mutableStateOf("慢慢来，比较快。") }
+    var source by remember { mutableStateOf("") }
+    var loading by remember { mutableStateOf(false) }
+    var refreshKey by remember { mutableIntStateOf(0) }
+
+    LaunchedEffect(refreshKey) {
+        loading = true
+        kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+            try {
+                val request = okhttp3.Request.Builder().url(HITOKOTO_URL).build()
+                hitokotoClient.newCall(request).execute().use { response ->
+                    if (response.isSuccessful) {
+                        val body = response.body?.string().orEmpty()
+                        if (body.isNotBlank()) {
+                            val node = com.fasterxml.jackson.databind.ObjectMapper().readTree(body)
+                            sentence = node.path("hitokoto").asText(sentence)
+                            val from = node.path("from").asText("")
+                            val fromWho = node.path("from_who").asText("")
+                            source = when {
+                                from.isNotBlank() && fromWho.isNotBlank() -> "—— $fromWho「$from」"
+                                from.isNotBlank() -> "——「$from」"
+                                fromWho.isNotBlank() -> "—— $fromWho"
+                                else -> ""
+                            }
+                        }
+                    }
+                }
+            } catch (e: Exception) {
+                // 网络不可用：保留当前句子，不打扰用户
+            }
+        }
+        loading = false
     }
-    Spacer(Modifier.height(16.dp))
+
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .neuRaised(RoundedCornerShape(24.dp), 5.dp)
+            .clickable(enabled = !loading) { refreshKey++ }
+            .padding(horizontal = 18.dp, vertical = 14.dp)
+    ) {
+        Row(
+            Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = "「 一言 」",
+                fontSize = 12.sp,
+                color = MiuixTheme.colorScheme.primary,
+                fontWeight = FontWeight.Medium
+            )
+            // 刷新按钮：凹陷圆槽
+            Box(
+                Modifier
+                    .size(30.dp)
+                    .neuPressed(CircleShape),
+                contentAlignment = Alignment.Center
+            ) {
+                Image(
+                    imageVector = Icons.Filled.Refresh,
+                    contentDescription = "换一句",
+                    modifier = Modifier.size(15.dp),
+                    colorFilter = androidx.compose.ui.graphics.ColorFilter.tint(
+                        if (loading) MiuixTheme.colorScheme.primary
+                        else MiuixTheme.colorScheme.onSurfaceVariantSummary
+                    )
+                )
+            }
+        }
+        Spacer(Modifier.height(8.dp))
+        Text(
+            text = sentence,
+            fontSize = 15.sp,
+            lineHeight = 23.sp,
+            color = MiuixTheme.colorScheme.onBackground
+        )
+        if (source.isNotBlank()) {
+            Spacer(Modifier.height(6.dp))
+            Text(
+                text = source,
+                fontSize = 12.sp,
+                color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                modifier = Modifier.align(Alignment.End)
+            )
+        }
+    }
 }
 
 @Composable
