@@ -18,7 +18,7 @@
 
 ## 下载
 
-- **[apk/Sure-Xu-Normal-1.1.0.apk](apk/Sure-Xu-Normal-1.1.0.apk)**（[全部版本](https://github.com/755596985/Sure-Xu/releases)）
+- **[apk/Sure-Xu-Normal-1.1.1.apk](apk/Sure-Xu-Normal-1.1.1.apk)**（[全部版本](https://github.com/755596985/Sure-Xu/releases)）
 - 需要 **root + LSPosed** 框架方可生效；安装前请卸载同包名旧版本（如有）
 
 ## 快速上手
