@@ -1,0 +1,101 @@
+name: Android CI
+
+on:
+  release:
+    types: [published]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    environment: production
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v6
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+          cache: gradle
+
+      - name: Grant execute permission for gradlew
+        run: chmod +x gradlew
+
+      # Release tag 形如 v1.0.0，去除前导 v 后作为版本号
+      - name: Resolve version from tag
+        id: resolve_version
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
+          echo "version=${VERSION}"
+
+      - name: Build with Gradle
+        run: ./gradlew assembleRelease -P "version=${{ steps.resolve_version.outputs.VERSION }}"
+
+      # 使用 build-tools 自带 apksigner 为两个 flavor 的 release APK 签名
+      - name: Sign release APKs
+        id: sign
+        env:
+          ANDROID_SIGNING_KEY: ${{ secrets.ANDROID_SIGNING_KEY }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          SDK_ROOT="${ANDROID_SDK_ROOT:-${ANDROID_HOME:-/usr/local/lib/android/sdk}}"
+          BT_DIR=$(ls -d "$SDK_ROOT"/build-tools/* | sort -V | tail -n 1)
+          echo "Using build-tools: $BT_DIR"
+
+          # 还原密钥库
+          echo "${ANDROID_SIGNING_KEY}" | base64 -d > "$RUNNER_TEMP/sesame-m-release.jks"
+
+          mkdir -p "$RUNNER_TEMP/signed"
+          # 依次签名 normal 与 compatible 的 release APK
+          for flavor in normal compatible; do
+            APK_DIR="app/build/outputs/apk/$flavor/release"
+            APK_FILE=$(find "$APK_DIR" -name "*.apk" | head -n 1)
+            [ -n "$APK_FILE" ] || { echo "No APK found in $APK_DIR"; exit 1; }
+            APK_NAME=$(basename "$APK_FILE")
+            echo "Signing $APK_NAME"
+
+            "$BT_DIR/zipalign" -f 4 "$APK_FILE" "$RUNNER_TEMP/aligned.apk"
+            "$BT_DIR/apksigner" sign \
+              --ks "$RUNNER_TEMP/sesame-m-release.jks" \
+              --ks-key-alias "$ANDROID_KEY_ALIAS" \
+              --ks-pass "pass:${ANDROID_KEYSTORE_PASSWORD}" \
+              --key-pass "pass:${ANDROID_KEY_PASSWORD}" \
+              --out "$RUNNER_TEMP/signed/$APK_NAME" \
+              "$RUNNER_TEMP/aligned.apk"
+          done
+
+      - name: Stage signed APKs into workspace
+        run: |
+          mkdir -p release-signed
+          cp "$RUNNER_TEMP"/signed/*.apk release-signed/
+          echo "SHORT_SHA=$(git rev-parse --short HEAD)" >> $GITHUB_ENV
+          for f in release-signed/*.apk; do
+            sha256sum "$f" > "$f.sha256"
+          done
+
+      - name: Upload signed assets to Release
+        uses: softprops/action-gh-release@v3
+        with:
+          name: ${{ github.event.release.tag_name }}
+          files: release-signed/*
+          tag_name: ${{ github.ref_name }}
+          draft: false
+          append_body: true
+          generate_release_notes: true
+          body: |
+            ## ✨What's Changed
+
+            ${{ github.event.head_commit.message || github.event.pull_request.title || '无详细信息' }}
+            > ## 下载说明
+              * Normal 为正常版本,使用较新的依赖构建
+              * Compatible 为兼容版本,使用较低版本依赖构建,适用于较旧的运行环境
+              * 两者均要求`Android 8.0`(API 26)及以上系统
+            > 倒卖必死全家

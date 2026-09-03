@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+
+    <!-- 奶白色主题：窗口底色与状态栏/导航栏统一，避免启动白闪与色块割裂 -->
+    <style name="AppTheme" parent="@style/Theme.AppCompat.Light">
+        <!--Appbar背景色-->
+        <item name="colorPrimary">@color/colorPrimary</item>
+        <!--ToolBar上的Title颜色-->
+        <item name="titleTextColor">@color/textColorPrimary</item>
+        <item name="subtitleTextColor">#6C6355</item>
+        <item name="android:windowBackground">@color/background</item>
+        <item name="android:colorBackground">@color/background</item>
+        <item name="android:navigationBarColor">@color/background</item>
+        <item name="android:statusBarColor">@color/background</item>
+        <item name="android:windowLightStatusBar">true</item>
+        <item name="android:windowLightNavigationBar">true</item>
+        <item name="windowNoTitle">true</item>
+    </style>
+
+    <style name="MenuTheme">
+        <item name="android:textColorSecondary">@color/textColorPrimary</item>
+        <item name="android:colorBackground">@color/background</item>
+    </style>
+</resources>

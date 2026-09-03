@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- 奶白色（Cream）主题：与 ui/miuix/CreamTheme.kt 使用同一套色调 -->
+    <color name="background">#FAF5EC</color>
+    <color name="secondary_text">#8C8272</color>
+    <color name="main_button">#FFFDF8</color>
+    <color name="main_button_pressed">#F3E6D2</color>
+    <color name="main_button_text">#3A332A</color>
+    <color name="button">#E07A3E</color>
+    <color name="button_pressed">#C75F26</color>
+    <color name="button_text">#FFFDF8</color>
+    <color name="dashboard_item_1">#E07A3E</color>
+    <color name="dashboard_item_2">#7C9A6D</color>
+    <color name="dashboard_item_3">#D2543E</color>
+    <color name="dashboard_item_4">#D9A441</color>
+
+    <color name="colorPrimary">#E07A3E</color>
+    <color name="textColorPrimary">#3A332A</color>
+    <color name="textColorDisable">#BFB6A4</color>
+    <color name="navigationBarColor">#00FFFFFF</color>
+
+</resources>
