@@ -32,6 +32,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import com.surexu.sesame.data.ConfigPreload
 import com.surexu.sesame.data.ConfigV2
@@ -78,6 +79,10 @@ class MiuixSettingsActivity : MiuixBaseActivity() {
         userId = intent.getStringExtra("userId")
         Model.initAllModel()
         ConfigPreload.prepare(userId)
+        // 从配置页分组入口直进:携带 group 参数时直接打开该分组字段页
+        intent.getStringExtra("group")?.let { code ->
+            currentGroup = ModelGroup.getByCode(code)
+        }
         setAppContent {
             SettingsContent(this, userId)
         }
@@ -186,10 +191,15 @@ fun SettingsContent(activity: MiuixSettingsActivity, userId: String?) {
         ) {
             SmallTitle(text = "配置分组")
             CardColumn {
+                // 全部 ModelGroup 均展示(含空分组),不隐藏任何入口
                 ModelGroup.values().forEach { g ->
-                    if (Model.getGroupModelConfig(g).isNotEmpty()) {
-                        ArrowPreference(title = g.getName(), onClick = { activity.currentGroup = g })
-                    }
+                    val fieldCount = Model.getGroupModelConfig(g).values.sumOf { it.fields.size }
+                    GroupEntryRow(
+                        emoji = GROUP_EMOJI[g] ?: "📦",
+                        title = g.getName(),
+                        subtitle = if (fieldCount > 0) "共 $fieldCount 项设置" else "暂无配置项",
+                        onClick = { activity.currentGroup = g }
+                    )
                 }
             }
             Spacer(Modifier.height(12.dp))
@@ -240,17 +250,40 @@ fun GroupFieldsPage(activity: MiuixSettingsActivity, userId: String?, group: Mod
                 .padding(horizontal = 12.dp),
             contentPadding = PaddingValues(vertical = 8.dp)
         ) {
-            modelConfigs.forEachIndexed { mcIdx, mc ->
-                item(key = "group-title-$mcIdx") {
-                    SmallTitle(text = mc.name ?: "")
-                }
-                mc.fields.values.toList().forEachIndexed { fIdx, field ->
-                    item(key = "field-$mcIdx-$fIdx") {
-                        FieldItem(field = field, onSave = { ConfigV2.save(userId, false) })
+            if (modelConfigs.isEmpty()) {
+                // 空分组:该组暂无任何配置字段
+                item(key = "empty-group") {
+                    Column(
+                        Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 60.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        Text(
+                            text = GROUP_EMOJI[group] ?: "📦",
+                            fontSize = 44.sp
+                        )
+                        Spacer(Modifier.height(12.dp))
+                        Text(
+                            text = "该分组暂无配置项",
+                            fontSize = 15.sp,
+                            color = MiuixTheme.colorScheme.onSurfaceVariantSummary
+                        )
                     }
                 }
-                item(key = "group-spacer-$mcIdx") {
-                    Spacer(Modifier.height(12.dp))
+            } else {
+                modelConfigs.forEachIndexed { mcIdx, mc ->
+                    item(key = "group-title-$mcIdx") {
+                        SmallTitle(text = mc.name ?: "")
+                    }
+                    mc.fields.values.toList().forEachIndexed { fIdx, field ->
+                        item(key = "field-$mcIdx-$fIdx") {
+                            FieldItem(field = field, onSave = { ConfigV2.save(userId, false) })
+                        }
+                    }
+                    item(key = "group-spacer-$mcIdx") {
+                        Spacer(Modifier.height(12.dp))
+                    }
                 }
             }
         }

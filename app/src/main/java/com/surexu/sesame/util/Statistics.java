@@ -17,6 +17,7 @@ public class Statistics {
     
     public static final Statistics INSTANCE = new Statistics();
     
+    private TimeStatistics total = new TimeStatistics();
     private TimeStatistics year = new TimeStatistics();
     private TimeStatistics month = new TimeStatistics();
     private TimeStatistics day = new TimeStatistics();
@@ -25,26 +26,31 @@ public class Statistics {
         Statistics stat = INSTANCE;
         switch (dt) {
             case COLLECTED:
+                stat.total.collected += i;
                 stat.day.collected += i;
                 stat.month.collected += i;
                 stat.year.collected += i;
                 break;
             case HELPED:
+                stat.total.helped += i;
                 stat.day.helped += i;
                 stat.month.helped += i;
                 stat.year.helped += i;
                 break;
             case WATERED:
+                stat.total.watered += i;
                 stat.day.watered += i;
                 stat.month.watered += i;
                 stat.year.watered += i;
                 break;
             case WATEREDCOUNT:
+                stat.total.wateredcount += i;
                 stat.day.wateredcount += i;
                 stat.month.wateredcount += i;
                 stat.year.wateredcount += i;
                 break;
             case WATERINGCOUNT:
+                stat.total.wateringcount += i;
                 stat.day.wateringcount += i;
                 stat.month.wateringcount += i;
                 stat.year.wateringcount += i;
@@ -57,6 +63,9 @@ public class Statistics {
         int data = 0;
         TimeStatistics ts = null;
         switch (tt) {
+            case TOTAL:
+                ts = stat.total;
+                break;
             case YEAR:
                 ts = stat.year;
                 break;
@@ -123,6 +132,16 @@ public class Statistics {
             if (statisticsFile.exists()) {
                 String json = FileUtil.readFromFile(statisticsFile);
                 JsonUtil.copyMapper().readerForUpdating(INSTANCE).readValue(json);
+                // 一次性迁移:旧文件无 total 字段(time==0)时,以今年累计作为总量起点
+                if (INSTANCE.total.time == 0) {
+                    INSTANCE.total.time = 1;
+                    INSTANCE.total.collected = INSTANCE.year.collected;
+                    INSTANCE.total.helped = INSTANCE.year.helped;
+                    INSTANCE.total.watered = INSTANCE.year.watered;
+                    INSTANCE.total.wateredcount = INSTANCE.year.wateredcount;
+                    INSTANCE.total.wateringcount = INSTANCE.year.wateringcount;
+                    FileUtil.write2File(JsonUtil.toFormatJsonString(INSTANCE), statisticsFile);
+                }
                 String formatted = JsonUtil.toFormatJsonString(INSTANCE);
                 if (formatted != null && !formatted.equals(json)) {
                     Log.i(TAG, "重新格式化 statistics.json");
@@ -198,7 +217,7 @@ public class Statistics {
     }
     
     public enum TimeType {
-        YEAR, MONTH, DAY
+        TOTAL, YEAR, MONTH, DAY
     }
     
     public enum DataType {

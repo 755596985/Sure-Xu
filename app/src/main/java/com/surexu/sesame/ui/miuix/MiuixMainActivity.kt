@@ -60,6 +60,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.surexu.sesame.R
 import com.surexu.sesame.data.AppConfig
+import com.surexu.sesame.data.ModelGroup
 import com.surexu.sesame.data.RunType
 import com.surexu.sesame.data.ViewAppInfo
 import com.surexu.sesame.util.FileUtil
@@ -362,77 +363,115 @@ fun HomeTab(activity: MiuixMainActivity) {
     )
     Spacer(Modifier.height(14.dp))
 
-    // 拟态状态卡（紧凑版）：与背景同色，靠光影浮起；右侧图标槽为凹陷圆
-    Row(
-        Modifier
-            .fillMaxWidth()
-            .neuRaised(RoundedCornerShape(20.dp), 6.dp)
-            .padding(horizontal = 16.dp, vertical = 12.dp),
-        horizontalArrangement = Arrangement.SpaceBetween,
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Column {
-            val statusColor =
-                if (activated) MiuixTheme.colorScheme.secondary
-                else MiuixTheme.colorScheme.onSurfaceVariantSummary
-            Text(
-                text = if (activated) "已激活" else "已关闭",
-                fontSize = 18.sp,
-                fontWeight = FontWeight.Bold,
-                color = statusColor
-            )
-            Spacer(Modifier.height(2.dp))
-            Text(
-                text = "$version · API 102",
-                fontSize = 12.sp,
-                color = MiuixTheme.colorScheme.onSurfaceVariantSummary
-            )
-        }
-        Box(
-            Modifier
-                .size(48.dp)
-                .neuPressed(CircleShape),
-            contentAlignment = Alignment.Center
-        ) {
-            if (activated) {
-                Image(
-                    imageVector = Icons.Filled.CheckCircle,
-                    contentDescription = null,
-                    modifier = Modifier.size(28.dp),
-                    colorFilter = androidx.compose.ui.graphics.ColorFilter.tint(
-                        MiuixTheme.colorScheme.secondary
-                    )
-                )
-            } else {
-                Box(
-                    Modifier
-                        .size(13.dp)
-                        .neuRaised(CircleShape, 2.dp)
-                )
-            }
-        }
-    }
-    Spacer(Modifier.height(16.dp))
-
-    SmallTitle(text = "数据统计")
-    CardColumn {
-        StatisticsTable()
-    }
+    // 能量统计卡：顶部状态条（激活状态 + 标题），下方 4×4 数据网格
+    EnergyStatsCard(activated = activated, version = version)
     Spacer(Modifier.height(16.dp))
 
     // 随机一言：点击整卡换一句
     HitokotoCard()
     Spacer(Modifier.height(16.dp))
+}
 
-    SmallTitle(text = "模块状态")
-    CardColumn {
-        StatusRow("模块状态", if (activated) "已激活" else "未激活")
-        StatusRow("版本", version)
-        StatusRow("SDK API", Build.VERSION.SDK_INT.toString())
-        StatusRow("设备", Build.MODEL ?: Build.DEVICE ?: "")
-        StatusRow("系统架构", Build.SUPPORTED_ABIS?.firstOrNull() ?: "")
+/**
+ * 能量统计卡（拟态）：顶部状态条 + 4×4 数据网格。
+ * 顶部左侧红点 + "已激活/未加载"状态 + 版本号，右侧"能量统计"标题；
+ * 下方 4 行 × 4 列：行=总量/今年/本月/今日，列=收取/帮收/浇水。
+ */
+@Composable
+fun EnergyStatsCard(activated: Boolean, version: String) {
+    val timeTypes = listOf(TimeType.TOTAL, TimeType.YEAR, TimeType.MONTH, TimeType.DAY)
+    val dataTypes = listOf(DataType.COLLECTED, DataType.HELPED, DataType.WATERED)
+    val colHeaders = listOf("收取", "帮收", "浇水")
+    val rowHeaders = listOf("总量", "今年", "本月", "今日")
+
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .neuRaised(RoundedCornerShape(24.dp), 5.dp)
+            .padding(horizontal = 18.dp, vertical = 14.dp)
+    ) {
+        // 顶部状态条
+        Row(
+            Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                // 状态红点
+                Box(
+                    Modifier
+                        .size(10.dp)
+                        .background(
+                            if (activated) Color(0xFF4CAF50) else Color(0xFFE0532C),
+                            CircleShape
+                        )
+                )
+                Spacer(Modifier.width(8.dp))
+                Text(
+                    text = if (activated) "已激活" else "未加载",
+                    fontSize = 15.sp,
+                    color = if (activated) MiuixTheme.colorScheme.secondary
+                    else MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                    fontWeight = FontWeight.Medium
+                )
+                Spacer(Modifier.width(8.dp))
+                Text(
+                    text = "· $version",
+                    fontSize = 12.sp,
+                    color = MiuixTheme.colorScheme.onSurfaceVariantSummary
+                )
+            }
+            Text(
+                text = "能量统计",
+                fontSize = 14.sp,
+                color = MiuixTheme.colorScheme.onSurfaceVariantSummary
+            )
+        }
+
+        Spacer(Modifier.height(8.dp))
+
+        // 表头
+        Row(Modifier.fillMaxWidth()) {
+            Box(Modifier.weight(1f))
+            colHeaders.forEach { h ->
+                Box(Modifier.weight(1f), contentAlignment = Alignment.Center) {
+                    Text(
+                        text = h,
+                        fontSize = 14.sp,
+                        color = MiuixTheme.colorScheme.onSurfaceVariantSummary
+                    )
+                }
+            }
+        }
+        Spacer(Modifier.height(4.dp))
+
+        // 数据行
+        rowHeaders.forEachIndexed { rowIdx, rowLabel ->
+            Row(
+                Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Box(Modifier.weight(1f)) {
+                    Text(
+                        text = rowLabel,
+                        fontSize = 14.sp,
+                        color = if (rowIdx == 3) MiuixTheme.colorScheme.primary
+                        else MiuixTheme.colorScheme.onSurfaceVariantSummary
+                    )
+                }
+                dataTypes.forEach { dt ->
+                    Box(Modifier.weight(1f), contentAlignment = Alignment.Center) {
+                        Text(
+                            text = "%,d".format(Statistics.getData(timeTypes[rowIdx], dt)),
+                            fontSize = 15.sp,
+                            color = MiuixTheme.colorScheme.onBackground,
+                            fontWeight = if (rowIdx == 3) FontWeight.Medium else FontWeight.Normal
+                        )
+                    }
+                }
+            }
+        }
     }
-    Spacer(Modifier.height(16.dp))
 }
 
 /** 一言（Hitokoto）客户端：短超时，避免阻塞首页 */
@@ -541,62 +580,6 @@ fun HitokotoCard() {
 }
 
 @Composable
-fun StatusRow(label: String, value: String) {
-    Row(
-        Modifier
-            .fillMaxWidth()
-            .padding(vertical = 8.dp),
-        horizontalArrangement = Arrangement.SpaceBetween,
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Text(text = label, fontSize = 15.sp, color = MiuixTheme.colorScheme.onBackground)
-        Text(text = value, fontSize = 15.sp, color = MiuixTheme.colorScheme.primary)
-    }
-}
-
-@Composable
-fun StatisticsTable() {
-    val rows = listOf(
-        "收" to listOf(DataType.COLLECTED),
-        "帮" to listOf(DataType.HELPED),
-        "浇" to listOf(DataType.WATERED),
-        "被水" to listOf(DataType.WATEREDCOUNT),
-        "浇水" to listOf(DataType.WATERINGCOUNT)
-    )
-    val columns = listOf(TimeType.DAY, TimeType.MONTH, TimeType.YEAR)
-    val headers = listOf("今日", "本月", "今年")
-
-    Column {
-        Row(Modifier.fillMaxWidth()) {
-            Box(Modifier.weight(1f))
-            headers.forEach { header ->
-                Box(Modifier.weight(1f), contentAlignment = Alignment.Center) {
-                    Text(text = header, fontSize = 13.sp, color = MiuixTheme.colorScheme.primary, fontWeight = FontWeight.Medium)
-                }
-            }
-        }
-        rows.forEach { (label, types) ->
-            Row(
-                Modifier
-                    .fillMaxWidth()
-                    .padding(vertical = 8.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Box(Modifier.weight(1f)) {
-                    Text(text = label, fontSize = 15.sp, color = MiuixTheme.colorScheme.onBackground)
-                }
-                columns.forEach { timeType ->
-                    val value = types.sumOf { Statistics.getData(timeType, it) }
-                    Box(Modifier.weight(1f), contentAlignment = Alignment.Center) {
-                        Text(text = value.toString(), fontSize = 15.sp, color = MiuixTheme.colorScheme.onBackground)
-                    }
-                }
-            }
-        }
-    }
-}
-
-@Composable
 fun LogsTab(activity: MiuixMainActivity) {
     Text(
         text = "日志",
@@ -691,9 +674,79 @@ fun openLog(activity: MiuixMainActivity, logType: LogType) {
     }
 }
 
+/** 配置分组入口页(图2)的图标与描述映射:全部 ModelGroup 均展示,不隐藏空分组 */
+internal val GROUP_EMOJI: Map<ModelGroup, String> = mapOf(
+    ModelGroup.BASE to "⚙️",
+    ModelGroup.FOREST to "🌳",
+    ModelGroup.FARM to "🐔",
+    ModelGroup.STALL to "🏪",
+    ModelGroup.ORCHARD to "🍎",
+    ModelGroup.SPORTS to "🏃",
+    ModelGroup.MEMBER to "👑",
+    ModelGroup.OTHER to "📦"
+)
+
+private val GROUP_DESC: Map<ModelGroup, String> = mapOf(
+    ModelGroup.BASE to "应用与通用设置",
+    ModelGroup.FOREST to "能量森林收取设置",
+    ModelGroup.FARM to "蚂蚁庄园收取设置",
+    ModelGroup.STALL to "新村摆摊相关设置",
+    ModelGroup.ORCHARD to "农场果树相关设置",
+    ModelGroup.SPORTS to "运动与步数设置",
+    ModelGroup.MEMBER to "会员权益相关设置",
+    ModelGroup.OTHER to "扩展与杂项设置"
+)
+
+/**
+ * 配置分组入口条目(图2):左侧拟态凸起圆形图标槽 + 组名与描述 + 右侧 › 箭头。
+ */
+@Composable
+fun GroupEntryRow(emoji: String, title: String, subtitle: String, onClick: () -> Unit) {
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(16.dp))
+            .clickable(onClick = onClick)
+            .padding(vertical = 9.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Box(
+            Modifier
+                .size(46.dp)
+                .neuRaised(CircleShape, 6.dp),
+            contentAlignment = Alignment.Center
+        ) {
+            Text(text = emoji, fontSize = 21.sp)
+        }
+        Spacer(Modifier.width(14.dp))
+        Column(Modifier.weight(1f)) {
+            Text(
+                text = title,
+                fontSize = 16.sp,
+                fontWeight = FontWeight.Medium,
+                color = MiuixTheme.colorScheme.onBackground
+            )
+            if (subtitle.isNotBlank()) {
+                Text(
+                    text = subtitle,
+                    fontSize = 12.sp,
+                    color = MiuixTheme.colorScheme.onSurfaceVariantSummary
+                )
+            }
+        }
+        Text(
+            text = "›",
+            fontSize = 22.sp,
+            color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+            modifier = Modifier.padding(horizontal = 6.dp)
+        )
+    }
+}
+
 @Composable
 fun ConfigTab() {
     val context = LocalContext.current
+    var selectedUserId by remember { mutableStateOf<String?>(null) }
     val items = remember {
         val list = ArrayList<Pair<String?, String>>()
         list.add(null to "默认")
@@ -725,11 +778,54 @@ fun ConfigTab() {
     SmallTitle(text = "配置管理")
     CardColumn {
         items.forEach { (userId, name) ->
-            ArrowPreference(
-                title = name,
+            val selected = selectedUserId == userId
+            Row(
+                Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(14.dp))
+                    .then(
+                        if (selected) Modifier.neuPressed(RoundedCornerShape(14.dp))
+                        else Modifier
+                    )
+                    .clickable { selectedUserId = userId }
+                    .padding(horizontal = 12.dp, vertical = 11.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = name,
+                    modifier = Modifier.weight(1f),
+                    fontSize = 16.sp,
+                    fontWeight = if (selected) FontWeight.Medium else FontWeight.Normal,
+                    color = if (selected) MiuixTheme.colorScheme.primary
+                    else MiuixTheme.colorScheme.onBackground
+                )
+                if (selected) {
+                    Image(
+                        imageVector = Icons.Filled.CheckCircle,
+                        contentDescription = "当前配置",
+                        modifier = Modifier.size(20.dp),
+                        colorFilter = androidx.compose.ui.graphics.ColorFilter.tint(
+                            MiuixTheme.colorScheme.primary
+                        )
+                    )
+                }
+            }
+        }
+    }
+    Spacer(Modifier.height(16.dp))
+
+    val currentName = items.firstOrNull { it.first == selectedUserId }?.second ?: "默认"
+    SmallTitle(text = "配置分组 · $currentName")
+    CardColumn {
+        ModelGroup.values().forEach { g ->
+            GroupEntryRow(
+                emoji = GROUP_EMOJI[g] ?: "📦",
+                title = g.getName(),
+                subtitle = GROUP_DESC[g] ?: "",
                 onClick = {
                     val intent = Intent(context, MiuixSettingsActivity::class.java)
-                    if (userId != null) intent.putExtra("userId", userId)
+                    if (selectedUserId != null) intent.putExtra("userId", selectedUserId)
+                    intent.putExtra("group", g.code)
                     context.startActivity(intent)
                 }
             )
