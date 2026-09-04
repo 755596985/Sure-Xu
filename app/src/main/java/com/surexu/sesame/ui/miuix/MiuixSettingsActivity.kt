@@ -2,6 +2,7 @@ package com.surexu.sesame.ui.miuix
 
 import android.content.Intent
 import android.os.Bundle
+import android.os.SystemClock
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
@@ -49,6 +50,7 @@ import com.surexu.sesame.data.modelFieldExt.SelectOneModelField
 import com.surexu.sesame.entity.IdAndName
 import com.surexu.sesame.entity.KVNode
 import com.surexu.sesame.util.Log
+import com.surexu.sesame.util.PermissionUtil
 import com.surexu.sesame.util.StringUtil
 import com.surexu.sesame.util.ToastUtil
 import kotlin.math.roundToInt
@@ -71,24 +73,58 @@ class MiuixSettingsActivity : MiuixBaseActivity() {
 
     private var userId: String? = null
 
+    /** 是否已具备「所有文件访问」权限；无权限时禁止进入编辑页(否则改动无法落盘,静默丢配置) */
+    private var hasFilePermission by mutableStateOf(false)
+
+    /** 保存失败 Toast 节流时间戳,避免字段连续自动保存失败时轰炸 */
+    private var lastSaveFailTipAt = 0L
+
     /** 三级导航状态：null=分组目录(二级)；非null=该分组字段页(三级) */
     var currentGroup by mutableStateOf<ModelGroup?>(null)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         userId = intent.getStringExtra("userId")
-        Model.initAllModel()
-        ConfigPreload.prepare(userId)
-        // 从配置页分组入口直进:携带 group 参数时直接打开该分组字段页
-        intent.getStringExtra("group")?.let { code ->
-            currentGroup = ModelGroup.getByCode(code)
+        hasFilePermission = PermissionUtil.checkFilePermissions(this)
+        if (hasFilePermission) {
+            prepareConfig()
         }
         setAppContent {
-            SettingsContent(this, userId)
+            if (hasFilePermission) {
+                SettingsContent(this, userId)
+            } else {
+                PermissionDeniedPage(onGrant = { PermissionUtil.checkOrRequestFilePermissions(this) })
+            }
+        }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        // 从系统授权页返回后刷新权限状态; 授权成功才初始化配置并进入编辑页
+        val granted = PermissionUtil.checkFilePermissions(this)
+        if (granted != hasFilePermission) {
+            hasFilePermission = granted
+            if (granted) {
+                prepareConfig()
+            }
+        }
+    }
+
+    /** 加载配置前的统一初始化(含从分组直进参数) */
+    private fun prepareConfig() {
+        Model.initAllModel()
+        ConfigPreload.prepare(userId)
+        intent.getStringExtra("group")?.let { code ->
+            currentGroup = ModelGroup.getByCode(code)
         }
     }
 
     override fun onBackPressed() {
+        if (!hasFilePermission) {
+            // 权限引导页:直接退出,不触发保存逻辑
+            super.onBackPressed()
+            return
+        }
         if (currentGroup != null) {
             // 在分组字段页(三级)按返回 → 回到分组目录(二级)
             currentGroup = null
@@ -99,10 +135,31 @@ class MiuixSettingsActivity : MiuixBaseActivity() {
     }
 
     fun save() {
-        if (ConfigV2.isModify(userId) && ConfigV2.save(userId, false)) {
+        if (!ConfigV2.isModify(userId)) {
+            return
+        }
+        if (ConfigV2.save(userId, false)) {
             ToastUtil.show(this, "保存成功！")
             sendRestartIfNeeded()
+        } else {
+            showSaveFailTip()
         }
+    }
+
+    /** 字段改动后的自动保存; 失败时提示(否则改动会静默丢失,重启还原默认) */
+    fun onFieldSaved() {
+        if (!ConfigV2.save(userId, false)) {
+            showSaveFailTip()
+        }
+    }
+
+    private fun showSaveFailTip() {
+        val now = SystemClock.elapsedRealtime()
+        if (now - lastSaveFailTipAt < 2000) {
+            return
+        }
+        lastSaveFailTipAt = now
+        ToastUtil.show(this, "保存失败！请检查 Sure-Xu 是否已开启「所有文件访问」权限(系统设置-应用-特殊权限)")
     }
 
     private fun sendRestartIfNeeded() {
@@ -212,6 +269,8 @@ fun SettingsContent(activity: MiuixSettingsActivity, userId: String?) {
                         showDeleteDialog = false
                         if (ConfigPreload.getConfigFile(userId).let { com.surexu.sesame.util.FileUtil.deleteFile(it) }) {
                             ToastUtil.show(context, "配置删除成功")
+                        } else {
+                            ToastUtil.show(context, "删除失败！请检查「所有文件访问」权限")
                         }
                         activity.finish()
                     },
@@ -278,7 +337,7 @@ fun GroupFieldsPage(activity: MiuixSettingsActivity, userId: String?, group: Mod
                     }
                     mc.fields.values.toList().forEachIndexed { fIdx, field ->
                         item(key = "field-$mcIdx-$fIdx") {
-                            FieldItem(field = field, onSave = { ConfigV2.save(userId, false) })
+                            FieldItem(field = field, onSave = { activity.onFieldSaved() })
                         }
                     }
                     item(key = "group-spacer-$mcIdx") {
@@ -667,5 +726,31 @@ fun ChoiceDialog(
                 }
             }
         }
+    }
+}
+
+/** 缺少「所有文件访问」权限时的引导页：配置存放于支付宝共享目录,不授权则无法落盘 */
+@Composable
+fun PermissionDeniedPage(onGrant: () -> Unit) {
+    Column(
+        Modifier
+            .fillMaxSize()
+            .padding(horizontal = 32.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center
+    ) {
+        Text(
+            text = "需要「所有文件访问」权限",
+            fontSize = 19.sp,
+            color = MiuixTheme.colorScheme.onBackground
+        )
+        Spacer(Modifier.height(12.dp))
+        Text(
+            text = "Sure-Xu 的配置保存在支付宝共享目录 /sdcard/Android/media/com.eg.android.AlipayGphone/sesame-M/ 下。\n\n模块必须被授予「所有文件访问」权限才能读取与保存配置——未授权时改动会被静默丢弃，重启后界面还原为默认值。",
+            fontSize = 14.sp,
+            color = MiuixTheme.colorScheme.onSurfaceVariantSummary
+        )
+        Spacer(Modifier.height(20.dp))
+        TextButton(text = "去授权", onClick = onGrant)
     }
 }

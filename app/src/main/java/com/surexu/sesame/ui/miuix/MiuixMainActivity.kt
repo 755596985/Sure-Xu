@@ -144,6 +144,8 @@ class MiuixMainActivity : MiuixBaseActivity() {
 
     override fun onResume() {
         super.onResume()
+        // 每次回到前台都重估权限:从系统授权页返回时 DisposableEffect 不会重跑,这里负责把状态翻新
+        hasPermission = PermissionUtil.checkFilePermissions(this)
         if (hasPermission) {
             if (RunType.DISABLE == ViewAppInfo.getRunType()) {
                 handler.postDelayed(titleRunner, 3000)
