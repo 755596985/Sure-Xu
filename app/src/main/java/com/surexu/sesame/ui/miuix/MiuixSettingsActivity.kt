@@ -82,6 +82,10 @@ class MiuixSettingsActivity : MiuixBaseActivity() {
     /** 三级导航状态：null=分组目录(二级)；非null=该分组字段页(三级) */
     var currentGroup by mutableStateOf<ModelGroup?>(null)
 
+    /** 是否由「配置」页点击分组直接进入字段页(带 group 参数启动)。
+     *  直进时按返回应直接退出回主界面；否则会跳到分组目录页，出现"返回后又跳到另一个配置页面"的观感。 */
+    private var isDirectGroupEntry = false
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         userId = intent.getStringExtra("userId")
@@ -115,23 +119,35 @@ class MiuixSettingsActivity : MiuixBaseActivity() {
         Model.initAllModel()
         ConfigPreload.prepare(userId)
         intent.getStringExtra("group")?.let { code ->
-            currentGroup = ModelGroup.getByCode(code)
+            ModelGroup.getByCode(code)?.let {
+                currentGroup = it
+                isDirectGroupEntry = true
+            }
         }
     }
 
-    override fun onBackPressed() {
+    /**
+     * 统一返回入口：顶栏返回按钮与系统返回键共用，保证「返回路径」和「保存行为」一致。
+     * - 无文件权限(引导页)：直接退出，不做保存
+     * - 由分组目录进入的字段页：返回分组目录
+     * - 其余(分组目录 / 从配置页直进的字段页)：先保存再退出
+     */
+    fun goBack() {
         if (!hasFilePermission) {
-            // 权限引导页:直接退出,不触发保存逻辑
-            super.onBackPressed()
+            finish()
             return
         }
-        if (currentGroup != null) {
-            // 在分组字段页(三级)按返回 → 回到分组目录(二级)
+        if (currentGroup != null && !isDirectGroupEntry) {
             currentGroup = null
         } else {
             save()
-            super.onBackPressed()
+            finish()
         }
+    }
+
+    @Suppress("MissingSuperCall", "DEPRECATION")
+    override fun onBackPressed() {
+        goBack()
     }
 
     fun save() {
@@ -233,7 +249,7 @@ fun SettingsContent(activity: MiuixSettingsActivity, userId: String?) {
         topBar = {
             LogTopBar(
                 title = "配置设置",
-                onBack = { activity.finish() },
+                onBack = { activity.goBack() },
                 onImport = { importLauncher.launch("*/*") },
                 onExport = { exportLauncher.launch("[" + (userId ?: "默认") + "]-config_v2.json") },
                 onClear = { showDeleteDialog = true }
@@ -292,7 +308,7 @@ fun GroupFieldsPage(activity: MiuixSettingsActivity, userId: String?, group: Mod
             SmallTopAppBar(
                 title = group.getName(),
                 navigationIcon = {
-                    IconButton(onClick = { activity.currentGroup = null }) {
+                    IconButton(onClick = { activity.goBack() }) {
                         Icon(
                             imageVector = Icons.Filled.ArrowBack,
                             contentDescription = "返回",
