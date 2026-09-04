@@ -128,7 +128,7 @@ class MiuixMainActivity : MiuixBaseActivity() {
                         updateSubTitle(RunType.MODEL)
                         handler.removeCallbacks(titleRunner)
                         if (isClick) {
-                            ToastUtil.show(context, "芝麻粒加载状态正常")
+                            ToastUtil.show(context, "Sure-Xu 加载状态正常")
                             isClick = false
                         }
                     }

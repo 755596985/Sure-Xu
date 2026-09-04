@@ -103,7 +103,7 @@ fun AboutScreen(activity: MiuixAboutActivity) {
                     .padding(18.dp)
             ) {
                 Text(
-                    text = "一个把温暖握在手里的芝麻粒。",
+                    text = "一个把温暖握在手里的 Sure-Xu。",
                     fontSize = 15.sp,
                     fontWeight = FontWeight.Medium,
                     color = MiuixTheme.colorScheme.onBackground

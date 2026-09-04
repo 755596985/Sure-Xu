@@ -70,7 +70,7 @@ import com.surexu.sesame.util.idMap.UserIdMap;
 import lombok.Getter;
 
 /**
- * 芝麻粒核心业务（框架无关）。
+ * Sure-Xu 核心业务（框架无关）。
  *
  * <p>不依赖 libxposed 或传统 Xposed 任何 API：仅通过
  * {@link com.surexu.sesame.util.XHelpers} 与
@@ -526,8 +526,8 @@ public class ApplicationHook {
 
                 boolean enableModule = Model.getModel(BaseModel.class).getEnableField().getValue();
                 if (!enableModule) {
-                    Log.record("芝麻粒已禁用");
-                    Toast.show("芝麻粒已禁用");
+                    Log.record("Sure-Xu 已禁用");
+                    Toast.show("Sure-Xu 已禁用");
                     return false;
                 }
                 if (BaseModel.getBatteryPerm().getValue() && !init && !PermissionUtil.checkBatteryPermissions()) {
@@ -617,7 +617,7 @@ public class ApplicationHook {
                 BaseModel.initData();
                 BaseModel.initRpcRequest();
                 Log.record("加载完成");
-                Toast.show("芝麻粒加载成功");
+                Toast.show("Sure-Xu 加载成功");
             }
             offline = false;
             execHandler();
@@ -625,7 +625,7 @@ public class ApplicationHook {
         } catch (Throwable th) {
             Log.i(TAG, "startHandler err:");
             Log.printStackTrace(TAG, th);
-            Toast.show("芝麻粒加载失败");
+            Toast.show("Sure-Xu 加载失败");
             return false;
         }
     }

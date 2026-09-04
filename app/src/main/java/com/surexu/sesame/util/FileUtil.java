@@ -16,7 +16,8 @@ import java.util.Locale;
 public class FileUtil {
     private static final String TAG = FileUtil.class.getSimpleName();
     //路径
-    public static final String CONFIG_DIRECTORY_NAME = "sesame-M";
+    public static final String LEGACY_DIRECTORY_NAME = "sesame-M"; // 旧版目录名，用于一次性迁移
+    public static final String CONFIG_DIRECTORY_NAME = "Sure-Xu";
     public static final File MAIN_DIRECTORY_FILE = getMainDirectoryFile();
     public static final File CONFIG_DIRECTORY_FILE = getConfigDirectoryFile();
     public static final File LOG_DIRECTORY_FILE = getLogDirectoryFile();
@@ -233,6 +234,8 @@ public class FileUtil {
         }
         else {
             mainDir.mkdirs();
+            // 首次升级：把旧版 sesame-M 目录内容迁移进 Sure-Xu（保留旧目录作回退，不删除）
+            migrateLegacyDirectory(new File(storageDir, LEGACY_DIRECTORY_NAME), mainDir);
             /*File oldDirectory = new File(Environment.getExternalStorageDirectory(), CONFIG_DIRECTORY_NAME);
             if (oldDirectory.exists()) {
                 File deprecatedFile = new File(oldDirectory, "deprecated");
@@ -252,7 +255,76 @@ public class FileUtil {
         }
         return mainDir;
     }
-    
+
+    /**
+     * 一次性迁移：把旧目录(legacyDir)的内容复制进新目录(newDir)，保留旧目录不删除。
+     * 用于 sesame-M → Sure-Xu 文件夹改名，避免用户旧配置 / 日志丢失。
+     */
+    private static void migrateLegacyDirectory(File legacyDir, File newDir) {
+        if (legacyDir == null || !legacyDir.exists() || !legacyDir.isDirectory()) {
+            return;
+        }
+        if (!newDir.exists()) {
+            newDir.mkdirs();
+        }
+        File[] children = legacyDir.listFiles();
+        if (children == null) {
+            return;
+        }
+        for (File child : children) {
+            File target = new File(newDir, child.getName());
+            try {
+                if (child.isDirectory()) {
+                    copyDirectory(child, target);
+                } else {
+                    copySingleFile(child, target);
+                }
+            } catch (Throwable t) {
+                Log.printStackTrace(TAG, t);
+            }
+        }
+        Log.record("已迁移旧目录[" + legacyDir.getName() + "]至[" + newDir.getName() + "]（旧目录保留作回退）");
+    }
+
+    private static void copyDirectory(File srcDir, File dstDir) {
+        if (!dstDir.exists()) {
+            dstDir.mkdirs();
+        }
+        File[] files = srcDir.listFiles();
+        if (files == null) {
+            return;
+        }
+        for (File f : files) {
+            File dst = new File(dstDir, f.getName());
+            try {
+                if (f.isDirectory()) {
+                    copyDirectory(f, dst);
+                } else {
+                    copySingleFile(f, dst);
+                }
+            } catch (Throwable t) {
+                Log.printStackTrace(TAG, t);
+            }
+        }
+    }
+
+    private static void copySingleFile(File src, File dst) {
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                Files.copy(src.toPath(), dst.toPath(), StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.COPY_ATTRIBUTES);
+            } else {
+                copyTo(src, dst);
+            }
+        } catch (IOException e) {
+            Log.printStackTrace(TAG, e);
+        }
+    }
+
+    private static File getLegacyExportDirectory() {
+        String dirStr = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS) + File.separator + LEGACY_DIRECTORY_NAME;
+        return new File(dirStr);
+    }
+
     private static File getLogDirectoryFile() {
         File logDir = new File(MAIN_DIRECTORY_FILE, "log");
         if (logDir.exists()) {
@@ -618,6 +690,8 @@ public class FileUtil {
         File storageDir = new File(storageDirStr);
         if (!storageDir.exists()) {
             storageDir.mkdirs();
+            // 迁移旧版 Downloads/sesame-M（导出目录，保留旧目录作回退）
+            migrateLegacyDirectory(getLegacyExportDirectory(), storageDir);
         }
         File exportedStatisticsFile = new File(storageDir, "statistics.json");
         if (exportedStatisticsFile.exists() && exportedStatisticsFile.isDirectory()) {
@@ -646,6 +720,8 @@ public class FileUtil {
         File exportDir = new File(exportDirStr);
         if (!exportDir.exists()) {
             exportDir.mkdirs();
+            // 迁移旧版 Downloads/sesame-M（导出目录，保留旧目录作回退）
+            migrateLegacyDirectory(getLegacyExportDirectory(), exportDir);
         }
         File exportFile = new File(exportDir, file.getName());
         if (exportFile.exists() && exportFile.isDirectory()) {

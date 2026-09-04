@@ -771,7 +771,7 @@ fun PermissionDeniedPage(onGrant: () -> Unit) {
         )
         Spacer(Modifier.height(12.dp))
         Text(
-            text = "Sure-Xu 的配置保存在支付宝共享目录 /sdcard/Android/media/com.eg.android.AlipayGphone/sesame-M/ 下。\n\n模块必须被授予「所有文件访问」权限才能读取与保存配置——未授权时改动会被静默丢弃，重启后界面还原为默认值。",
+            text = "Sure-Xu 的配置保存在支付宝共享目录 /sdcard/Android/media/com.eg.android.AlipayGphone/Sure-Xu/ 下（旧版 sesame-M 目录会在首次启动时自动迁移，旧目录保留作回退）。\n\n模块必须被授予「所有文件访问」权限才能读取与保存配置——未授权时改动会被静默丢弃，重启后界面还原为默认值。",
             fontSize = 14.sp,
             color = MiuixTheme.colorScheme.onSurfaceVariantSummary
         )

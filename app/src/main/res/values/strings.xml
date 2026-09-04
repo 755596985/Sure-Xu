@@ -141,6 +141,6 @@
     <string name="consume_gold">Consume Gold</string>
     <string name="use_special_food">Use Special Food</string>
     <string name="one_click_setup">One Click Setup</string>
-    <string name="module_description">Sure-Xu：拟态奶白版芝麻粒。蚂蚁森林能量收取与庄园自动化，开源学习用途，禁止商用。</string>
+    <string name="module_description">Sure-Xu：拟态奶白版自动化模块。蚂蚁森林能量收取与庄园自动化，开源学习用途，禁止商用。</string>
 
 </resources>
