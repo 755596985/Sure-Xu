@@ -151,6 +151,11 @@ dependencies {
     compatibleImplementation group: 'com.fasterxml.jackson.core', name: 'jackson-databind', version: '2.13.5'
     compatibleImplementation group: 'com.fasterxml.jackson.core', name: 'jackson-annotations', version: '2.13.5'
 
+    // legacy 与 compatible 同为旧版 Jackson：main 源集(MiuixMainActivity hitokoto JSON)需各 flavor 提供
+    legacyImplementation group: 'com.fasterxml.jackson.core', name: 'jackson-core', version: '2.13.5'
+    legacyImplementation group: 'com.fasterxml.jackson.core', name: 'jackson-databind', version: '2.13.5'
+    legacyImplementation group: 'com.fasterxml.jackson.core', name: 'jackson-annotations', version: '2.13.5'
+
     // NanoHTTPD 核心依赖（最新稳定版）
     implementation 'org.nanohttpd:nanohttpd:2.3.1'
 
