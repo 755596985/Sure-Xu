@@ -40,6 +40,7 @@ import com.surexu.sesame.data.ConfigV2
 import com.surexu.sesame.data.Model
 import com.surexu.sesame.data.ModelField
 import com.surexu.sesame.data.ModelGroup
+import com.surexu.sesame.data.AppConfig
 import com.surexu.sesame.data.modelFieldExt.ChoiceModelField
 import com.surexu.sesame.data.modelFieldExt.EmptyModelField
 import com.surexu.sesame.data.modelFieldExt.IntegerModelField
@@ -380,6 +381,12 @@ fun FieldItem(field: ModelField<*>, onSave: () -> Unit) {
                     checked = it
                     field.setObjectValue(it)
                     onSave()
+                    // 开启抓包(debugMode)时联动打开「抓包记录」开关,
+                    // 否则 hook 装上了但 Log.debug() 因 enableDebugLog=false 直接 return, 抓包日志永远为空
+                    if (field.getCode() == "debugMode" && it) {
+                        AppConfig.INSTANCE.enableDebugLog = true
+                        AppConfig.save()
+                    }
                 }
             )
         }
