@@ -280,10 +280,12 @@ public class FileUtil {
                     copySingleFile(child, target);
                 }
             } catch (Throwable t) {
-                Log.printStackTrace(TAG, t);
+                android.util.Log.e("FileUtil-Migrate", "copy child failed: " + child.getName(), t);
             }
         }
-        Log.record("已迁移旧目录[" + legacyDir.getName() + "]至[" + newDir.getName() + "]（旧目录保留作回退）");
+        // 注意：此处处于 FileUtil 静态初始化阶段，Log 类尚未就绪（其 logger 依赖 MAIN_DIRECTORY_FILE），
+        // 只能用框架的 android.util.Log，不能用项目内 Log，否则会触发类初始化死循环 / NPE。
+        android.util.Log.i("FileUtil-Migrate", "已迁移旧目录[" + legacyDir.getName() + "]至[" + newDir.getName() + "]（旧目录保留作回退）");
     }
 
     private static void copyDirectory(File srcDir, File dstDir) {
@@ -303,20 +305,17 @@ public class FileUtil {
                     copySingleFile(f, dst);
                 }
             } catch (Throwable t) {
-                Log.printStackTrace(TAG, t);
+                android.util.Log.e("FileUtil-Migrate", "copyDirectory failed: " + f.getName(), t);
             }
         }
     }
 
     private static void copySingleFile(File src, File dst) {
         try {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                Files.copy(src.toPath(), dst.toPath(), StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.COPY_ATTRIBUTES);
-            } else {
-                copyTo(src, dst);
-            }
+            // minSdk 26 (Android 8)，始终走 Files.copy；避免回退 copyTo()（其内调用项目 Log，静态初始化期不可用）
+            Files.copy(src.toPath(), dst.toPath(), StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.COPY_ATTRIBUTES);
         } catch (IOException e) {
-            Log.printStackTrace(TAG, e);
+            android.util.Log.e("FileUtil-Migrate", "copySingleFile failed: " + src.getName(), e);
         }
     }
 
