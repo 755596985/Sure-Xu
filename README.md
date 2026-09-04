@@ -21,8 +21,12 @@
 
 ## 下载
 
-- **[apk/Sure-Xu-Normal-1.3.0.apk](apk/Sure-Xu-Normal-1.3.0.apk)**（[全部版本](https://github.com/755596985/Sure-Xu/releases)）
-- 需要 **root + LSPosed** 框架方可生效；安装前请卸载同包名旧版本（如有）
+- **[apk/Sure-Xu-Normal-1.3.0.apk](apk/Sure-Xu-Normal-1.3.0.apk)** — 正常版（较新依赖构建，推荐）
+- **[apk/Sure-Xu-Compatible-1.3.0.apk](apk/Sure-Xu-Compatible-1.3.0.apk)** — 兼容版（较低版本依赖，适配较旧运行环境）
+- [全部版本](https://github.com/755596985/Sure-Xu/releases)（Release 附带 sha256 校验）
+- 需要 **root + LSPosed** 框架方可生效
+
+> ⚠️ **v1.3.0 起签名更换为新密钥**：旧版本用户（v1.2.0 及更早）无法覆盖安装，请先**卸载旧版**再安装；v1.3.0 之后的更新可正常覆盖升级。
 
 ## 快速上手
 

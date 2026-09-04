@@ -66,4 +66,6 @@ Xposed-Modules-Repo/
 plugin/
 # 签名密钥与口令（不要提交到公开仓库）
 *.jks
+*.p12
+*.keystore
 app/keystore.properties
