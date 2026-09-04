@@ -89,6 +89,9 @@ class MiuixMainActivity : MiuixBaseActivity() {
     var statisticsText by mutableStateOf("")
     var hasPermission by mutableStateOf(false)
 
+    /** 配置页当前选中的账号 userId；null=默认配置。必须持久在 Activity 级别，否则切换底部 tab 后 ConfigTab 离开组合会丢失。 */
+    var selectedUserId by mutableStateOf<String?>(null)
+
     private val handler = Handler(Looper.getMainLooper())
     private var isClick = false
     private val titleRunner = Runnable { updateSubTitle(RunType.DISABLE) }
@@ -279,7 +282,7 @@ fun MainScreen(activity: MiuixMainActivity) {
             when (selectedTab) {
                 0 -> HomeTab(activity)
                 1 -> LogsTab(activity)
-                2 -> ConfigTab()
+                2 -> ConfigTab(activity)
                 3 -> SettingsTab(activity)
             }
         }
@@ -746,9 +749,10 @@ fun GroupEntryRow(emoji: String, title: String, subtitle: String, onClick: () ->
 }
 
 @Composable
-fun ConfigTab() {
+fun ConfigTab(activity: MiuixMainActivity) {
     val context = LocalContext.current
-    var selectedUserId by remember { mutableStateOf<String?>(null) }
+    // selectedUserId 上提到 Activity 级别，切换底部 tab 后 ConfigTab 离开组合也不会重置
+    var selectedUserId by activity.selectedUserId
     val items = remember {
         val list = ArrayList<Pair<String?, String>>()
         list.add(null to "默认")
