@@ -71,6 +71,10 @@ android {
             dimension "default"
             ext.applicationType = "Compatible"
         }
+        legacy {
+            dimension "default"
+            ext.applicationType = "Legacy"
+        }
     }
     buildTypes {
         release {
@@ -85,6 +89,19 @@ android {
     sourceSets {
         main {
             jniLibs.srcDirs = ['src/main/jniLibs']
+        }
+        // 现代版（libxposed API 102）：normal / compatible 共享同一份 modern 代码与 Xposed 元数据
+        normal {
+            java.srcDirs += ['src/modern/java']
+            resources.srcDirs += ['src/modernResources']
+        }
+        compatible {
+            java.srcDirs += ['src/modern/java']
+            resources.srcDirs += ['src/modernResources']
+        }
+        // legacy（传统 API ≤93）：java/assets 由默认的 src/legacy 目录承载，不引入任何 libxposed 资源
+        legacy {
+            java.srcDirs += ['src/legacy/java']
         }
     }
     packaging {
@@ -104,7 +121,7 @@ android {
 androidComponents {
     onVariants(selector().withBuildType('release')) { variant ->
         variant.outputs.each { output ->
-            def appType = variant.name.startsWith('compatible') ? 'Compatible' : 'Normal'
+            def appType = variant.name.startsWith('legacy') ? 'Legacy' : variant.name.startsWith('compatible') ? 'Compatible' : 'Normal'
             output.outputFileName.set("Sure-Xu-${appType}-${project.appVersion}.apk")
         }
     }
@@ -112,12 +129,19 @@ androidComponents {
 
 dependencies {
     implementation 'androidx.appcompat:appcompat:1.7.0'
-    compileOnly 'io.github.libxposed:api:102.0.0'
-    implementation 'io.github.libxposed:service:102.0.0'
     compileOnly group: 'org.projectlombok', name: 'lombok', version: '1.18.32'
     annotationProcessor group: 'org.projectlombok', name: 'lombok', version: '1.18.32'
     implementation 'com.elvishew:xlog:1.11.0'
     implementation 'com.squareup.okhttp3:okhttp:4.12.0'
+
+    // libxposed API 102 现代模块依赖：仅 normal / compatible 使用（legacy 严禁携带 libxposed 类）
+    normalImplementation 'io.github.libxposed:service:102.0.0'
+    compatibleImplementation 'io.github.libxposed:service:102.0.0'
+    normalCompileOnly 'io.github.libxposed:api:102.0.0'
+    compatibleCompileOnly 'io.github.libxposed:api:102.0.0'
+
+    // 传统 Xposed API ≤93：仅 legacy 使用，compileOnly 由 libs/api-82.jar 提供
+    legacyCompileOnly files('libs/api-82.jar')
 
     normalImplementation group: 'com.fasterxml.jackson.core', name: 'jackson-core', version: '2.18.2'
     normalImplementation group: 'com.fasterxml.jackson.core', name: 'jackson-databind', version: '2.18.2'

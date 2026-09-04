@@ -41,9 +41,7 @@ import com.surexu.sesame.util.compat.XC_MethodReplacement;
 import com.surexu.sesame.BuildConfig;
 import com.surexu.sesame.data.ConfigV2;
 import com.surexu.sesame.data.Model;
-import com.surexu.sesame.data.RunType;
 import com.surexu.sesame.data.TokenConfig;
-import com.surexu.sesame.data.ViewAppInfo;
 import com.surexu.sesame.data.task.BaseTask;
 import com.surexu.sesame.data.task.ModelTask;
 import com.surexu.sesame.entity.AlipayVersion;
@@ -55,7 +53,6 @@ import com.surexu.sesame.model.normal.base.BaseModel;
 import com.surexu.sesame.model.task.antMember.AntMemberRpcCall;
 import com.surexu.sesame.rpc.bridge.NewRpcBridge;
 import com.surexu.sesame.rpc.bridge.OldRpcBridge;
-import com.surexu.sesame.data.AppConfig;
 import com.surexu.sesame.rpc.bridge.RpcBridge;
 import com.surexu.sesame.rpc.bridge.RpcVersion;
 import com.surexu.sesame.rpc.intervallimit.RpcIntervalLimit;
@@ -72,12 +69,17 @@ import com.surexu.sesame.util.TimeUtil;
 import com.surexu.sesame.util.idMap.UserIdMap;
 import lombok.Getter;
 
-import androidx.annotation.NonNull;
-import io.github.libxposed.api.XposedInterface;
-import io.github.libxposed.api.XposedModule;
-import io.github.libxposed.api.XposedModuleInterface;
-
-public class ApplicationHook extends XposedModule {
+/**
+ * 芝麻粒核心业务（框架无关）。
+ *
+ * <p>不依赖 libxposed 或传统 Xposed 任何 API：仅通过
+ * {@link com.surexu.sesame.util.XHelpers} 与
+ * {@link com.surexu.sesame.util.compat.XC_MethodHook} 等自研兼容层完成 hook。
+ * 两种运行时（API 102 现代版 / API ≤93 传统版）的入口类负责把
+ * {@link #handleLoadPackage(com.surexu.sesame.util.compat.XC_LoadPackage.LoadPackageParam)}
+ * 接到各自框架。
+ */
+public class ApplicationHook {
 
     private static final String TAG = ApplicationHook.class.getSimpleName();
 
@@ -142,44 +144,6 @@ public class ApplicationHook extends XposedModule {
 
     public static void setOffline(boolean offline) {
         ApplicationHook.offline = offline;
-    }
-
-    @Override
-    public void onModuleLoaded(@NonNull XposedModuleInterface.ModuleLoadedParam param) {
-        XHelpers.init(this);
-        log(4, TAG, "event=module_loaded api=" + getApiVersion()
-                + " framework=" + getFrameworkName() + " version=" + getFrameworkVersion());
-        markFile("/sdcard/sesame_diag.txt", "onModuleLoaded " + getFrameworkName() + " api=" + getApiVersion());
-        try {
-            // 读取与 App 共享的日志开关配置，使各分项开关在本进程真正生效
-            AppConfig.load();
-            // 模块已在 LSPosed 中启用：onModuleLoaded 被调用即代表已启用，
-            // 直接标记为已激活（与是否打开 / hook 支付宝无关）
-            ViewAppInfo.setRunTypeByCode(RunType.MODEL.getCode());
-            // 若 UI 已启动，发同进程广播实时刷新界面
-            Application app = (Application) Class.forName("android.app.ActivityThread")
-                    .getMethod("currentApplication").invoke(null);
-            if (app != null) {
-                app.sendBroadcast(new Intent("com.surexu.sesame.status"));
-            }
-        } catch (Throwable ignored) {}
-    }
-
-    private static void markFile(String path, String line) {
-        try {
-            java.io.FileWriter fw = new java.io.FileWriter(path, true);
-            fw.write(line + " @ " + new java.util.Date() + "\n");
-            fw.close();
-        } catch (Throwable ignored) {}
-    }
-
-    @Override
-    public void onPackageReady(@NonNull XposedModuleInterface.PackageReadyParam param) {
-        XC_LoadPackage.LoadPackageParam lpparam = new XC_LoadPackage.LoadPackageParam();
-        lpparam.packageName = param.getPackageName();
-        lpparam.processName = param.getPackageName();
-        lpparam.classLoader = param.getClassLoader();
-        handleLoadPackage(lpparam);
     }
 
     public void handleLoadPackage(XC_LoadPackage.LoadPackageParam lpparam) {

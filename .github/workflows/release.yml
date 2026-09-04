@@ -36,7 +36,7 @@ jobs:
       - name: Build with Gradle
         run: ./gradlew assembleRelease -P "version=${{ steps.resolve_version.outputs.VERSION }}"
 
-      # 使用 build-tools 自带 apksigner 为两个 flavor 的 release APK 签名
+      # 使用 build-tools 自带 apksigner 为三个 flavor 的 release APK 签名
       - name: Sign release APKs
         id: sign
         env:
@@ -54,8 +54,8 @@ jobs:
           echo "${ANDROID_SIGNING_KEY}" | base64 -d > "$RUNNER_TEMP/sesame-m-release.jks"
 
           mkdir -p "$RUNNER_TEMP/signed"
-          # 依次签名 normal 与 compatible 的 release APK
-          for flavor in normal compatible; do
+          # 依次签名 normal / compatible / legacy 的 release APK
+          for flavor in normal compatible legacy; do
             APK_DIR="app/build/outputs/apk/$flavor/release"
             APK_FILE=$(find "$APK_DIR" -name "*.apk" | head -n 1)
             [ -n "$APK_FILE" ] || { echo "No APK found in $APK_DIR"; exit 1; }
@@ -95,7 +95,8 @@ jobs:
 
             ${{ github.event.head_commit.message || github.event.pull_request.title || '无详细信息' }}
             > ## 下载说明
-              * Normal 为正常版本,使用较新的依赖构建
-              * Compatible 为兼容版本,使用较低版本依赖构建,适用于较旧的运行环境
-              * 两者均要求`Android 8.0`(API 26)及以上系统
+              * Normal 为正常版本,使用较新的依赖构建,基于 libxposed API 102(需 LSPosed 等 API 102 框架)
+              * Compatible 为兼容版本,同样基于 libxposed API 102,但使用较低版本依赖构建,适用于较旧的运行环境
+              * Legacy 为传统 Xposed 模块,兼容 API 82~93 框架(如 OPatch、TaiChi、旧版 LSPosed 等免 Root / 传统框架)
+              * 三者均要求`Android 8.0`(API 26)及以上系统
             > 倒卖必死全家

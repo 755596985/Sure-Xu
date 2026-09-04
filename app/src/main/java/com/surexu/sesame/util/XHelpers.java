@@ -1,42 +1,38 @@
 package com.surexu.sesame.util;
 
-import android.util.Log;
-
-import io.github.libxposed.api.XposedInterface;
-import io.github.libxposed.api.XposedModule;
+import com.surexu.sesame.util.compat.HookBackend;
 import com.surexu.sesame.util.compat.XC_MethodHook;
 
 import java.lang.reflect.Constructor;
-import java.lang.reflect.Executable;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.lang.reflect.Modifier;
 import java.util.HashMap;
 import java.util.Map;
-import java.util.concurrent.atomic.AtomicInteger;
 
 /**
- * API 102 临时迁移兼容层（桥接旧 XposedHelpers）。
+ * 框架无关的反射 / Hook 兼容工具。
  *
- * <p>把旧 {@code XHelpers.findAndHookMethod} / {@code callMethod} / {@code findClass} 等映射到
- * libxposed API 102 的 {@link XposedModule#hook(Executable)} 与 Java 反射。
- * 业务代码仅需把 {@code XHelpers.} 替换为 {@code XHelpers.} 即可，hook 逻辑保持不变。
+ * <p>把旧 {@code XposedHelpers.findAndHookMethod} / {@code callMethod} / {@code findClass}
+ * 等常用操作收敛到这里，业务代码统一调用本类即可。真实的 hook 落地由各运行时入口
+ * 通过 {@link #setBackend(HookBackend)} 注入的后端完成：
+ * normal/compatible 注入 libxposed(API 102) 后端，legacy 注入传统 Xposed(≤93) 后端。
  *
- * <p>此兼容层为迁移期间的临时方案，待后续逐步替换为原生 API 102 写法。
+ * <p>此兼容层为迁移期间的统一方案，业务逻辑在三种产物间保持一致。
  */
 public class XHelpers {
 
     private static final String TAG = "XHelpers";
-    private static XposedModule sModule;
-    private static final AtomicInteger sHookSeq = new AtomicInteger(0);
+    /** 当前生效的 hook 后端：libxposed(API102) 或 legacy Xposed(≤93)，由入口类在运行时注入 */
+    private static volatile HookBackend sBackend;
 
-    public static void init(XposedModule module) {
-        sModule = module;
+    public static void setBackend(HookBackend backend) {
+        sBackend = backend;
     }
 
     private static void ensureInit() {
-        if (sModule == null) {
-            throw new IllegalStateException("XHelpers 未初始化，请在 XposedModule.onModuleLoaded 中调用 XHelpers.init(this)");
+        if (sBackend == null) {
+            throw new IllegalStateException("XHelpers 未初始化，请先由框架入口调用 XHelpers.setBackend(...)");
         }
     }
 
@@ -196,40 +192,7 @@ public class XHelpers {
 
     public static XC_MethodHook.Unhook hookMember(java.lang.reflect.Member member, XC_MethodHook callback) {
         ensureInit();
-        XposedInterface.HookHandle handle = sModule.hook((Executable) member)
-                .setId("xh_" + sHookSeq.incrementAndGet())
-                .setExceptionMode(XposedInterface.ExceptionMode.DEFAULT)
-                .intercept(chain -> {
-                    XC_MethodHook.MethodHookParam param = new XC_MethodHook.MethodHookParam();
-                    param.thisObject = chain.getThisObject();
-                    param.args = chain.getArgs().toArray();
-                    try {
-                        callback.callBefore(param);
-                    } catch (Throwable t) {
-                        Log.e(TAG, "beforeHookedMethod error", t);
-                        return chain.proceed(param.args);
-                    }
-                    if (param.hasResult) {
-                        return param.result;
-                    }
-                    Object result;
-                    try {
-                        result = chain.proceed(param.args);
-                    } catch (Throwable t) {
-                        Log.e(TAG, "proceed error", t);
-                        throw t;
-                    }
-                    param.result = result;
-                    param.hasResult = true;
-                    try {
-                        callback.callAfter(param);
-                    } catch (Throwable t) {
-                        Log.e(TAG, "afterHookedMethod error", t);
-                        return param.result;
-                    }
-                    return param.result;
-                });
-        return () -> handle.unhook();
+        return sBackend.hook(member, callback);
     }
 
     // ----------------------------------------------------------------
