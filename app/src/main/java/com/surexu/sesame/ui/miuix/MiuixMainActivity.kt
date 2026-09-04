@@ -713,7 +713,7 @@ internal val GROUP_EMOJI: Map<ModelGroup, String> = mapOf(
     ModelGroup.OTHER to "📦"
 )
 
-private val GROUP_DESC: Map<ModelGroup, String> = mapOf(
+internal val GROUP_DESC: Map<ModelGroup, String> = mapOf(
     ModelGroup.BASE to "应用与通用设置",
     ModelGroup.FOREST to "能量森林收取设置",
     ModelGroup.FARM to "蚂蚁庄园收取设置",

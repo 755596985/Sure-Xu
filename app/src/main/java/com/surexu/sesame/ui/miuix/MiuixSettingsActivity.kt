@@ -15,10 +15,12 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -32,6 +34,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
@@ -265,15 +268,25 @@ fun SettingsContent(activity: MiuixSettingsActivity, userId: String?) {
                 .padding(padding)
                 .padding(horizontal = 12.dp, vertical = 8.dp)
         ) {
+            // 账号上下文卡片：明确“正在编辑谁的配置”，避免改错账号（既美观又实用）
+            AccountContextCard(userId)
+            Spacer(Modifier.height(12.dp))
             SmallTitle(text = "配置分组")
             CardColumn {
                 // 全部 ModelGroup 均展示(含空分组),不隐藏任何入口
                 ModelGroup.values().forEach { g ->
                     val fieldCount = Model.getGroupModelConfig(g).values.sumOf { it.fields.size }
+                    val desc = GROUP_DESC[g]
+                    val subtitle = when {
+                        desc.isNullOrBlank() && fieldCount > 0 -> "共 $fieldCount 项设置"
+                        desc.isNullOrBlank() -> "暂无配置项"
+                        fieldCount > 0 -> "$desc · 共 $fieldCount 项"
+                        else -> "$desc · 暂无配置项"
+                    }
                     GroupEntryRow(
                         emoji = GROUP_EMOJI[g] ?: "📦",
                         title = g.getName(),
-                        subtitle = if (fieldCount > 0) "共 $fieldCount 项设置" else "暂无配置项",
+                        subtitle = subtitle,
                         onClick = { activity.currentGroup = g }
                     )
                 }
@@ -300,6 +313,41 @@ fun SettingsContent(activity: MiuixSettingsActivity, userId: String?) {
     }
 }
 
+/**
+ * 账号上下文卡片：在配置分组入口页顶部明确“正在编辑谁的配置”。
+ * 默认配置会作为新账号的继承模板，账号配置只影响对应账号——这点此前常被误解，故置顶提示。
+ */
+@Composable
+fun AccountContextCard(userId: String?) {
+    val isDefault = userId.isNullOrBlank()
+    CardColumn {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Box(
+                Modifier
+                    .size(40.dp)
+                    .neuPressed(CircleShape),
+                contentAlignment = Alignment.Center
+            ) {
+                Text(text = if (isDefault) "🗂️" else "👤", fontSize = 18.sp)
+            }
+            Spacer(Modifier.width(12.dp))
+            Column(Modifier.weight(1f)) {
+                Text(
+                    text = if (isDefault) "默认配置模板" else "账号配置",
+                    fontSize = 15.sp,
+                    fontWeight = FontWeight.Medium,
+                    color = MiuixTheme.colorScheme.onBackground
+                )
+                Text(
+                    text = if (isDefault) "新账号首次加载时会继承此模板" else "账号：$userId",
+                    fontSize = 12.sp,
+                    color = MiuixTheme.colorScheme.onSurfaceVariantSummary
+                )
+            }
+        }
+    }
+}
+
 /** 三级:某大类分组下的全部配置字段(懒加载,避免整页全量组合造成的卡顿) */
 @Composable
 fun GroupFieldsPage(activity: MiuixSettingsActivity, userId: String?, group: ModelGroup) {
@@ -307,7 +355,7 @@ fun GroupFieldsPage(activity: MiuixSettingsActivity, userId: String?, group: Mod
     Scaffold(
         topBar = {
             SmallTopAppBar(
-                title = group.getName(),
+                title = (GROUP_EMOJI[group] ?: "📦") + "  " + group.getName(),
                 navigationIcon = {
                     IconButton(onClick = { activity.goBack() }) {
                         Icon(
@@ -351,15 +399,18 @@ fun GroupFieldsPage(activity: MiuixSettingsActivity, userId: String?, group: Mod
                 }
             } else {
                 modelConfigs.forEachIndexed { mcIdx, mc ->
-                    item(key = "group-title-$mcIdx") {
-                        SmallTitle(text = mc.name ?: "")
-                    }
-                    mc.fields.values.toList().forEachIndexed { fIdx, field ->
-                        item(key = "field-$mcIdx-$fIdx") {
-                            FieldItem(field = field, onSave = { activity.onFieldSaved() })
+                    // 每个配置分区包裹进一张拟态凸起卡片，字段成组呈现，视觉更有层次
+                    item(key = "section-$mcIdx") {
+                        CardColumn {
+                            if (!mc.name.isNullOrBlank()) {
+                                SmallTitle(text = mc.name ?: "")
+                            }
+                            mc.fields.values.forEach { field ->
+                                FieldItem(field = field, onSave = { activity.onFieldSaved() })
+                            }
                         }
                     }
-                    item(key = "group-spacer-$mcIdx") {
+                    item(key = "section-spacer-$mcIdx") {
                         Spacer(Modifier.height(12.dp))
                     }
                 }
