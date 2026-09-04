@@ -163,14 +163,16 @@ class MiuixSettingsActivity : MiuixBaseActivity() {
     }
 
     private fun sendRestartIfNeeded() {
-        if (!StringUtil.isEmpty(userId)) {
-            try {
-                val intent = Intent("com.eg.android.AlipayGphone.sesame.restart")
+        try {
+            // 无论编辑的是账号配置还是“默认”,都通知支付宝进程重新加载;
+            // 不带 userId = 当前登录账号立即重载(空 userId 在支付宝侧会匹配当前账号)
+            val intent = Intent("com.eg.android.AlipayGphone.sesame.restart")
+            if (!StringUtil.isEmpty(userId)) {
                 intent.putExtra("userId", userId)
-                sendBroadcast(intent)
-            } catch (th: Throwable) {
-                Log.printStackTrace(th)
             }
+            sendBroadcast(intent)
+        } catch (th: Throwable) {
+            Log.printStackTrace(th)
         }
     }
 }

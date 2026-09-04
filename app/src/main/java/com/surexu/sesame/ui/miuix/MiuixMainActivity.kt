@@ -70,6 +70,7 @@ import com.surexu.sesame.util.PermissionUtil
 import com.surexu.sesame.util.Statistics
 import com.surexu.sesame.util.Statistics.DataType
 import com.surexu.sesame.util.Statistics.TimeType
+import com.surexu.sesame.util.StringUtil
 import com.surexu.sesame.util.ToastUtil
 import com.surexu.sesame.util.idMap.UserIdMap
 import top.yukonga.miuix.kmp.basic.Scaffold
@@ -85,13 +86,31 @@ import java.util.Calendar
 
 class MiuixMainActivity : MiuixBaseActivity() {
 
+    companion object {
+        private const val PREFS_UI = "sesame_ui_state"
+        private const val KEY_LAST_SELECTED_USER = "last_selected_user_id"
+    }
+
     var runTypeText by mutableStateOf("")
     var statisticsText by mutableStateOf("")
     var hasPermission by mutableStateOf(false)
 
+    private val uiPrefs by lazy { getSharedPreferences(PREFS_UI, MODE_PRIVATE) }
+
     /** 配置页当前选中的账号 userId；null=默认配置。必须持久在 Activity 级别，否则切换底部 tab 后 ConfigTab 离开组合会丢失。
      *  类型须为 MutableState 本身，ConfigTab 内通过 `by activity.selectedUserId` 委托读写。 */
     val selectedUserId = mutableStateOf<String?>(null)
+
+    /** 持久化“配置页上次选中账号”，进程重启/重新打开 UI 后自动恢复，不再跳回默认 */
+    fun persistSelectedAccount(userId: String?) {
+        uiPrefs.edit().putString(KEY_LAST_SELECTED_USER, userId).apply()
+    }
+
+    /** 读取上次选中的账号 id(可能已失效,由 ConfigTab 渲染时对目录校验并回退默认) */
+    fun restoreSelectedAccount(): String? {
+        val last = uiPrefs.getString(KEY_LAST_SELECTED_USER, null) ?: return null
+        return if (StringUtil.isEmpty(last)) null else last
+    }
 
     private val handler = Handler(Looper.getMainLooper())
     private var isClick = false
@@ -133,6 +152,8 @@ class MiuixMainActivity : MiuixBaseActivity() {
         }
         ViewAppInfo.checkRunType()
         updateSubTitle(ViewAppInfo.getRunType())
+        // 恢复“配置页上次选中账号”(进程重启不丢失); 若目录已不存在由 ConfigTab 渲染时回退
+        selectedUserId.value = restoreSelectedAccount()
         val intentFilter = IntentFilter()
         intentFilter.addAction("com.surexu.sesame.status")
         intentFilter.addAction("com.surexu.sesame.update")
@@ -754,24 +775,38 @@ fun ConfigTab(activity: MiuixMainActivity) {
     val context = LocalContext.current
     // selectedUserId 上提到 Activity 级别，切换底部 tab 后 ConfigTab 离开组合也不会重置
     var selectedUserId by activity.selectedUserId
-    val items = remember {
+    // 有「所有文件访问」权限才能列出支付宝共享目录中的账号;授权返回后 hasPermission 翻新,列表据此重建
+    val canList = activity.hasPermission
+    val items = remember(canList) {
         val list = ArrayList<Pair<String?, String>>()
         list.add(null to "默认")
-        try {
-            val dir = FileUtil.CONFIG_DIRECTORY_FILE
-            dir.listFiles()?.forEach { configDir ->
-                if (configDir.isDirectory) {
-                    val userId = configDir.name
-                    UserIdMap.loadSelf(userId)
-                    val userEntity = UserIdMap.get(userId)
-                    val name = userEntity?.let { it.showName + ": " + it.account } ?: userId
-                    list.add(userId to name)
+        if (canList) {
+            try {
+                val dir = FileUtil.CONFIG_DIRECTORY_FILE
+                dir.listFiles()?.forEach { configDir ->
+                    if (configDir.isDirectory) {
+                        val userId = configDir.name
+                        UserIdMap.loadSelf(userId)
+                        val userEntity = UserIdMap.get(userId)
+                        val name = userEntity?.let { it.showName + ": " + it.account } ?: userId
+                        list.add(userId to name)
+                    }
                 }
+            } catch (e: Exception) {
+                Log.printStackTrace(e)
             }
-        } catch (e: Exception) {
-            Log.printStackTrace(e)
         }
         list
+    }
+    // 仅当有权限、能读到真实目录时，才对失效的记忆账号做回退(避免无权限空列表误清用户记忆)
+    LaunchedEffect(items, canList) {
+        if (canList) {
+            val cur = activity.selectedUserId.value
+            if (cur != null && items.none { it.first == cur }) {
+                activity.selectedUserId.value = null
+                activity.persistSelectedAccount(null)
+            }
+        }
     }
 
     Text(
@@ -794,7 +829,10 @@ fun ConfigTab(activity: MiuixMainActivity) {
                         if (selected) Modifier.neuPressed(RoundedCornerShape(14.dp))
                         else Modifier
                     )
-                    .clickable { selectedUserId = userId }
+                    .clickable {
+                        selectedUserId = userId
+                        activity.persistSelectedAccount(userId)
+                    }
                     .padding(horizontal = 12.dp, vertical = 11.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
@@ -818,6 +856,28 @@ fun ConfigTab(activity: MiuixMainActivity) {
                 }
             }
         }
+    }
+    Spacer(Modifier.height(12.dp))
+    // 关键说明:功能由支付宝进程执行,按“当前登录支付宝账号”读对应配置;改默认不会作用于已有账号
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(14.dp))
+            .background(MiuixTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f))
+            .padding(horizontal = 14.dp, vertical = 12.dp)
+    ) {
+        Text(
+            text = "请先选择你的支付宝账号再修改下方配置",
+            fontSize = 13.sp,
+            fontWeight = FontWeight.Medium,
+            color = MiuixTheme.colorScheme.primary,
+        )
+        Spacer(Modifier.height(4.dp))
+        Text(
+            text = "本模块由支付宝进程加载执行：它始终读取“当前登录支付宝账号”名下那一份配置（此列表中的账号名），自动收能量、喂鸡等功能都在支付宝里运行，本界面只是编辑器。“默认”只作为新账号首次运行的初始模板，改它不会影响列表中已有的账号。选中账号会被记住，下次打开不会跳回默认。",
+            fontSize = 12.sp,
+            color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+        )
     }
     Spacer(Modifier.height(16.dp))
 
