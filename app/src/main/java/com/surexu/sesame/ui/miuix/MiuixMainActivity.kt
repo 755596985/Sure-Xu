@@ -89,8 +89,9 @@ class MiuixMainActivity : MiuixBaseActivity() {
     var statisticsText by mutableStateOf("")
     var hasPermission by mutableStateOf(false)
 
-    /** 配置页当前选中的账号 userId；null=默认配置。必须持久在 Activity 级别，否则切换底部 tab 后 ConfigTab 离开组合会丢失。 */
-    var selectedUserId by mutableStateOf<String?>(null)
+    /** 配置页当前选中的账号 userId；null=默认配置。必须持久在 Activity 级别，否则切换底部 tab 后 ConfigTab 离开组合会丢失。
+     *  类型须为 MutableState 本身，ConfigTab 内通过 `by activity.selectedUserId` 委托读写。 */
+    val selectedUserId = mutableStateOf<String?>(null)
 
     private val handler = Handler(Looper.getMainLooper())
     private var isClick = false
