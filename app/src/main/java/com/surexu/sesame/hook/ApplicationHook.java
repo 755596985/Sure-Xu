@@ -39,6 +39,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 
 import com.surexu.sesame.util.compat.XC_MethodReplacement;
 import com.surexu.sesame.BuildConfig;
+import com.surexu.sesame.data.AppConfig;
 import com.surexu.sesame.data.ConfigV2;
 import com.surexu.sesame.data.Model;
 import com.surexu.sesame.data.TokenConfig;
@@ -159,6 +160,15 @@ public class ApplicationHook {
                 @Override
                 protected void afterHookedMethod(MethodHookParam param) throws Throwable {
                     context = (Context) param.args[0];
+                    // 加载与 UI 共享的应用级配置(日志各分项开关等)。
+                    // 必须在任何 Log.xxx 之前：Log 各方法按 AppConfig 的开关决定是否写入，
+                    // 而 AppConfig.INSTANCE 默认是 Java 字段初值，不加载则 UI 里的开关在本进程全部不生效
+                    // (抓包记录 enableDebugLog 默认 false，不加载就永远写不出抓包日志)。
+                    try {
+                        AppConfig.load();
+                    } catch (Throwable th) {
+                        Log.printStackTrace(TAG, th);
+                    }
                     alipayVersion = new AlipayVersion(context.getPackageManager().getPackageInfo(context.getPackageName(), 0).versionName);
                     try {
                         AlipayMiniMarkHelper.init(classLoader);
@@ -969,6 +979,16 @@ public class ApplicationHook {
                             Log.printStackTrace(TAG, th);
                         }
                         break;
+                    case "com.eg.android.AlipayGphone.sesame.reloadConfig":
+                        // UI 侧修改日志开关等共享配置后通知本进程重载，使开关在注入进程中即时生效
+                        try {
+                            AppConfig.load();
+                            Log.i(TAG, "reload AppConfig from UI");
+                        } catch (Throwable th) {
+                            Log.i(TAG, "sesame reloadConfig err:");
+                            Log.printStackTrace(TAG, th);
+                        }
+                        break;
                 }
             }
         }
@@ -994,6 +1014,7 @@ public class ApplicationHook {
             intentFilter.addAction("com.eg.android.AlipayGphone.sesame.reLogin");
             intentFilter.addAction("com.eg.android.AlipayGphone.sesame.status");
             intentFilter.addAction("com.eg.android.AlipayGphone.sesame.rpctest");
+            intentFilter.addAction("com.eg.android.AlipayGphone.sesame.reloadConfig");
 
             broadcastReceiver = new AlipayBroadcastReceiver();
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {

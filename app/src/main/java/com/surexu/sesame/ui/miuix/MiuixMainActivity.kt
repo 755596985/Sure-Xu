@@ -209,6 +209,21 @@ class MiuixMainActivity : MiuixBaseActivity() {
         }
     }
 
+    /**
+     * 通知支付宝进程重载共享配置(日志各分项开关等)，使开关在注入进程中即时生效。
+     *
+     * 不发这个广播的话，UI 只把 appConfig.json 落盘，但支付宝进程内存里的 AppConfig.INSTANCE
+     * 仍是旧值，于是"抓包记录"等开关看着开了、日志却依旧为空。
+     */
+    fun broadcastReloadConfig() {
+        try {
+            sendBroadcast(Intent("com.eg.android.AlipayGphone.sesame.reloadConfig"))
+        } catch (th: Throwable) {
+            Log.i("view sendBroadcast reloadConfig err:")
+            Log.printStackTrace(th)
+        }
+    }
+
     fun openUrl(url: String) {
         try {
             val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url))
@@ -623,6 +638,7 @@ fun LogsTab(activity: MiuixMainActivity) {
             forest = it
             AppConfig.INSTANCE.enableForestLog = it
             AppConfig.save()
+            activity.broadcastReloadConfig()
             if (!it) FileUtil.clearLog("forest")
         }
         var farm by remember { mutableStateOf(AppConfig.INSTANCE.enableFarmLog ?: true) }
@@ -630,6 +646,7 @@ fun LogsTab(activity: MiuixMainActivity) {
             farm = it
             AppConfig.INSTANCE.enableFarmLog = it
             AppConfig.save()
+            activity.broadcastReloadConfig()
             if (!it) FileUtil.clearLog("farm")
         }
         var other by remember { mutableStateOf(AppConfig.INSTANCE.enableOtherLog ?: true) }
@@ -637,6 +654,7 @@ fun LogsTab(activity: MiuixMainActivity) {
             other = it
             AppConfig.INSTANCE.enableOtherLog = it
             AppConfig.save()
+            activity.broadcastReloadConfig()
             if (!it) FileUtil.clearLog("other")
         }
     }
@@ -649,6 +667,7 @@ fun LogsTab(activity: MiuixMainActivity) {
             debug = it
             AppConfig.INSTANCE.enableDebugLog = it
             AppConfig.save()
+            activity.broadcastReloadConfig()
             if (!it) FileUtil.clearLog("debug")
         }
         var error by remember { mutableStateOf(AppConfig.INSTANCE.enableViewErrorLog ?: true) }
@@ -656,6 +675,7 @@ fun LogsTab(activity: MiuixMainActivity) {
             error = it
             AppConfig.INSTANCE.enableViewErrorLog = it
             AppConfig.save()
+            activity.broadcastReloadConfig()
             if (!it) FileUtil.clearLog("error")
         }
         var runtime by remember { mutableStateOf(AppConfig.INSTANCE.enableViewRuntimeLog ?: true) }
@@ -663,6 +683,7 @@ fun LogsTab(activity: MiuixMainActivity) {
             runtime = it
             AppConfig.INSTANCE.enableViewRuntimeLog = it
             AppConfig.save()
+            activity.broadcastReloadConfig()
             if (!it) FileUtil.clearLog("runtime")
         }
     }

@@ -421,6 +421,7 @@ fun GroupFieldsPage(activity: MiuixSettingsActivity, userId: String?, group: Mod
 
 @Composable
 fun FieldItem(field: ModelField<*>, onSave: () -> Unit) {
+    val context = LocalContext.current
     when (field.type) {
         "BOOLEAN" -> {
             var checked by remember { mutableStateOf(field.value as? Boolean ?: false) }
@@ -437,6 +438,13 @@ fun FieldItem(field: ModelField<*>, onSave: () -> Unit) {
                     if (field.getCode() == "debugMode" && it) {
                         AppConfig.INSTANCE.enableDebugLog = true
                         AppConfig.save()
+                        // 通知支付宝进程重载共享配置,否则只是把 appConfig.json 落盘,
+                        // 注入进程内存里的 AppConfig.INSTANCE 仍是旧值,抓包日志依旧为空
+                        try {
+                            context.sendBroadcast(Intent("com.eg.android.AlipayGphone.sesame.reloadConfig"))
+                        } catch (th: Throwable) {
+                            Log.printStackTrace(th)
+                        }
                     }
                 }
             )
