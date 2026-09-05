@@ -38,6 +38,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.Home
+import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Tune
@@ -73,12 +74,16 @@ import com.surexu.sesame.util.Statistics.TimeType
 import com.surexu.sesame.util.StringUtil
 import com.surexu.sesame.util.ToastUtil
 import com.surexu.sesame.util.idMap.UserIdMap
+import androidx.compose.ui.window.Dialog
+import top.yukonga.miuix.kmp.basic.Icon
+import top.yukonga.miuix.kmp.basic.IconButton
 import top.yukonga.miuix.kmp.basic.Scaffold
 import top.yukonga.miuix.kmp.basic.SmallTitle
 import top.yukonga.miuix.kmp.basic.Switch
 import top.yukonga.miuix.kmp.basic.Text
 import top.yukonga.miuix.kmp.basic.TextButton
 import top.yukonga.miuix.kmp.preference.ArrowPreference
+import top.yukonga.miuix.kmp.preference.RadioButtonPreference
 import top.yukonga.miuix.kmp.preference.SwitchPreference
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 import java.io.File
@@ -830,79 +835,63 @@ fun ConfigTab(activity: MiuixMainActivity) {
         }
     }
 
-    Text(
-        text = "配置",
-        fontSize = 32.sp,
-        fontWeight = FontWeight.Bold,
-        color = MiuixTheme.colorScheme.onBackground,
-        modifier = Modifier.padding(top = 8.dp, bottom = 12.dp)
-    )
+    // 账号选择弹窗状态:右上角账号图标点击后弹出,页面主体只保留配置分组
+    var showAccountDialog by remember { mutableStateOf(false) }
 
-    SmallTitle(text = "配置管理")
-    CardColumn {
-        items.forEach { (userId, name) ->
-            val selected = selectedUserId == userId
-            Row(
+    val currentName = items.firstOrNull { it.first == selectedUserId }?.second ?: "默认"
+
+    // 标题行:左侧大标题「配置」,右侧账号头像图标(点击弹出账号选择弹窗)
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .padding(top = 8.dp, bottom = 12.dp),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(
+            text = "配置",
+            fontSize = 32.sp,
+            fontWeight = FontWeight.Bold,
+            color = MiuixTheme.colorScheme.onBackground
+        )
+        // 账号头像按钮:默认显示人像图标;已选账号显示账号名首字符
+        IconButton(onClick = { showAccountDialog = true }) {
+            Box(
                 Modifier
-                    .fillMaxWidth()
-                    .clip(RoundedCornerShape(14.dp))
-                    .then(
-                        if (selected) Modifier.neuPressed(RoundedCornerShape(14.dp))
-                        else Modifier
-                    )
-                    .clickable {
-                        selectedUserId = userId
-                        activity.persistSelectedAccount(userId)
-                    }
-                    .padding(horizontal = 12.dp, vertical = 11.dp),
-                verticalAlignment = Alignment.CenterVertically
+                    .size(38.dp)
+                    .neuPressed(CircleShape),
+                contentAlignment = Alignment.Center
             ) {
-                Text(
-                    text = name,
-                    modifier = Modifier.weight(1f),
-                    fontSize = 16.sp,
-                    fontWeight = if (selected) FontWeight.Medium else FontWeight.Normal,
-                    color = if (selected) MiuixTheme.colorScheme.primary
-                    else MiuixTheme.colorScheme.onBackground
-                )
-                if (selected) {
-                    Image(
-                        imageVector = Icons.Filled.CheckCircle,
-                        contentDescription = "当前配置",
-                        modifier = Modifier.size(20.dp),
-                        colorFilter = androidx.compose.ui.graphics.ColorFilter.tint(
-                            MiuixTheme.colorScheme.primary
-                        )
+                if (selectedUserId == null) {
+                    Icon(
+                        imageVector = Icons.Filled.Person,
+                        contentDescription = "选择账号",
+                        modifier = Modifier.size(22.dp),
+                        tint = MiuixTheme.colorScheme.primary
+                    )
+                } else {
+                    Text(
+                        text = currentName.take(1),
+                        fontSize = 16.sp,
+                        fontWeight = FontWeight.Medium,
+                        color = MiuixTheme.colorScheme.primary
                     )
                 }
             }
         }
     }
-    Spacer(Modifier.height(12.dp))
-    // 关键说明:功能由支付宝进程执行,按“当前登录支付宝账号”读对应配置;改默认不会作用于已有账号
-    Column(
-        Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(14.dp))
-            .background(MiuixTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f))
-            .padding(horizontal = 14.dp, vertical = 12.dp)
-    ) {
-        Text(
-            text = "请先选择你的支付宝账号再修改下方配置",
-            fontSize = 13.sp,
-            fontWeight = FontWeight.Medium,
-            color = MiuixTheme.colorScheme.primary,
-        )
-        Spacer(Modifier.height(4.dp))
-        Text(
-            text = "本模块由支付宝进程加载执行：它始终读取“当前登录支付宝账号”名下那一份配置（此列表中的账号名），自动收能量、喂鸡等功能都在支付宝里运行，本界面只是编辑器。“默认”只作为新账号首次运行的初始模板，改它不会影响列表中已有的账号。选中账号会被记住，下次打开不会跳回默认。",
-            fontSize = 12.sp,
-            color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+    if (showAccountDialog) {
+        AccountPickerDialog(
+            items = items,
+            selectedUserId = selectedUserId,
+            onSelect = { userId ->
+                selectedUserId = userId
+                activity.persistSelectedAccount(userId)
+            },
+            onDismiss = { showAccountDialog = false }
         )
     }
-    Spacer(Modifier.height(16.dp))
 
-    val currentName = items.firstOrNull { it.first == selectedUserId }?.second ?: "默认"
     SmallTitle(text = "配置分组 · $currentName")
     CardColumn {
         ModelGroup.values().forEach { g ->
@@ -920,6 +909,47 @@ fun ConfigTab(activity: MiuixMainActivity) {
         }
     }
     Spacer(Modifier.height(16.dp))
+}
+
+@Composable
+fun AccountPickerDialog(
+    items: List<Pair<String?, String>>,
+    selectedUserId: String?,
+    onSelect: (String?) -> Unit,
+    onDismiss: () -> Unit
+) {
+    var sel by remember { mutableStateOf(selectedUserId) }
+    Dialog(onDismissRequest = onDismiss) {
+        Box(
+            Modifier
+                .fillMaxWidth()
+                .background(MiuixTheme.colorScheme.surface, RoundedCornerShape(16.dp))
+                .padding(16.dp)
+        ) {
+            Column {
+                Text(
+                    text = "选择账号",
+                    fontSize = 16.sp,
+                    fontWeight = FontWeight.Medium,
+                    color = MiuixTheme.colorScheme.onBackground,
+                    modifier = Modifier.padding(horizontal = 4.dp, vertical = 6.dp)
+                )
+                items.forEach { (userId, name) ->
+                    RadioButtonPreference(
+                        title = name,
+                        selected = sel == userId,
+                        onClick = { sel = userId }
+                    )
+                }
+                Spacer(Modifier.height(8.dp))
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                    TextButton(text = "取消", onClick = onDismiss)
+                    Spacer(Modifier.width(8.dp))
+                    TextButton(text = "确定", onClick = { onSelect(sel); onDismiss() })
+                }
+            }
+        }
+    }
 }
 
 @Composable
