@@ -892,7 +892,6 @@ fun ConfigTab(activity: MiuixMainActivity) {
         )
     }
 
-    SmallTitle(text = "配置分组 · $currentName")
     CardColumn {
         ModelGroup.values().forEach { g ->
             GroupEntryRow(
