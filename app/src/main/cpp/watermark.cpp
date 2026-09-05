@@ -6,7 +6,7 @@ Java_io_github_aw1y2z_sesame_util_WatermarkUtil_getWatermarkTextNative(
         JNIEnv* env,
         jclass /* clazz */) {
     // 水印文本内容
-    std::string watermarkText = "免费模块禁止倒卖 QQ群:123456";
+    std::string watermarkText = "免费模块禁止倒卖";
     return env->NewStringUTF(watermarkText.c_str());
 }
 

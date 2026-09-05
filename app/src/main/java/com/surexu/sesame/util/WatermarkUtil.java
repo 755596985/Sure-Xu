@@ -24,13 +24,13 @@ public class WatermarkUtil {
      */
     public static String getWatermarkText() {
         if (!isLibraryLoaded) {
-            return "免费模块 交流QQ群:694474777";
+            return "免费模块";
         }
         try {
             return getWatermarkTextNative();
         } catch (UnsatisfiedLinkError e) {
             //Log.printStackTrace(e);
-            return "免费模块 交流QQ群:694474777";
+            return "免费模块";
         }
     }
     
