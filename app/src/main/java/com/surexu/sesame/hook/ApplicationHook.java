@@ -139,6 +139,13 @@ public class ApplicationHook {
 
     private static XC_MethodHook.Unhook rpcResponseUnhook;
 
+    // 抓包(HTTP/WebView)相关 hook 句柄与安装标记,用于卸载与幂等安装
+    private static XC_MethodHook.Unhook webviewCaptureUnhook;
+
+    private static XC_MethodHook.Unhook okhttpCaptureUnhook;
+
+    private static volatile boolean captureHooksInstalled = false;
+
     private static BroadcastReceiver broadcastReceiver = null;
 
     private static volatile boolean broadcastReceiverRegistered = false;
@@ -565,7 +572,17 @@ public class ApplicationHook {
                     }
                 }
                 setWakenAtTimeAlarm();
-                if (BaseModel.getNewRpc().getValue() && BaseModel.getDebugMode().getValue()) {
+                // 抓包:用独立「抓包功能」开关(与 debugMode 解耦),便于普通用户直接开启实时抓包
+                boolean captureEnabled = BaseModel.getNewRpc().getValue()
+                        && (BaseModel.getDebugMode().getValue() || BaseModel.getCaptureLog().getValue());
+                if (captureEnabled) {
+                    // 抓包日志走 Log.debug(debugLogger→抓包记录),必须强制 enableDebugLog=true,
+                    // 否则钩子装上了但 Log.debug 因开关关闭直接 return,抓包记录永远为空
+                    if (!com.surexu.sesame.data.AppConfig.INSTANCE.getEnableDebugLog()) {
+                        com.surexu.sesame.data.AppConfig.INSTANCE.setEnableDebugLog(true);
+                        com.surexu.sesame.data.AppConfig.save();
+                    }
+                    installHttpCaptureHooks();
                     try {
                         rpcRequestUnhook = XHelpers.findAndHookMethod("com.alibaba.ariver.commonability.network.rpc.RpcBridgeExtension", classLoader, "rpc", String.class, boolean.class, boolean.class, String.class, classLoader.loadClass(ClassUtil.JSON_OBJECT_NAME), String.class, classLoader.loadClass(ClassUtil.JSON_OBJECT_NAME), boolean.class, boolean.class, int.class, boolean.class, String.class, classLoader.loadClass("com.alibaba.ariver.app.api.App"), classLoader.loadClass("com.alibaba.ariver.app.api.Page"), classLoader.loadClass("com.alibaba.ariver.engine.api.bridge.model.ApiContext"), classLoader.loadClass("com.alibaba.ariver.engine.api.bridge.extension" + ".BridgeCallback"), new XC_MethodHook() {
 
@@ -640,6 +657,119 @@ public class ApplicationHook {
         }
     }
 
+    /**
+     * 安装 HTTP / WebView 层的抓包 hook(全 try/catch 包裹,任一失败不影响其它 hook 与模块启动)。
+     * 目的:alipay 内嵌 H5(如天猫金蛋)走的是 WebView XHR / mtop HTTP,而不是 ariver RpcBridgeExtension,
+     * 原有 ariver 抓包钩子抓不到这些请求,这里补上一个网络层与 WebView 层的抓包。
+     */
+    private static void installHttpCaptureHooks() {
+        if (captureHooksInstalled) {
+            return;
+        }
+        captureHooksInstalled = true;
+
+        // 1) WebViewClient.shouldInterceptRequest —— 抓取 H5 页面发起的网络请求(URL 级别)
+        try {
+            webviewCaptureUnhook = XHelpers.findAndHookMethod(
+                    "android.webkit.WebViewClient", classLoader, "shouldInterceptRequest",
+                    android.webkit.WebView.class, android.webkit.WebResourceRequest.class,
+                    new XC_MethodHook() {
+                        @Override
+                        protected void beforeHookedMethod(MethodHookParam param) throws Throwable {
+                            try {
+                                Object req = param.args[1];
+                                if (req == null) {
+                                    return;
+                                }
+                                String url = String.valueOf(XHelpers.callMethod(req, "getUrl"));
+                                String method = String.valueOf(XHelpers.callMethod(req, "getMethod"));
+                                Log.debug("[WebView] " + method + " " + url + "\n");
+                            } catch (Throwable t) {
+                                Log.printStackTrace(t);
+                            }
+                        }
+                    });
+            Log.i(TAG, "hook webview shouldInterceptRequest successfully");
+        } catch (Throwable t) {
+            Log.i(TAG, "hook webview shouldInterceptRequest err:");
+            Log.printStackTrace(TAG, t);
+        }
+
+        // 2) OkHttp3 Interceptor —— 抓取 native HTTP 请求(含请求/响应体),覆盖 mtop 等普通 HTTP
+        try {
+            Class<?> okHttpClientClazz = XHelpers.findClassIfExists("okhttp3.OkHttpClient", classLoader);
+            if (okHttpClientClazz != null) {
+                okhttpCaptureUnhook = XHelpers.findAndHookMethod(
+                        okHttpClientClazz, "newBuilder",
+                        new XC_MethodHook() {
+                            @Override
+                            protected void afterHookedMethod(MethodHookParam param) throws Throwable {
+                                try {
+                                    addOkHttpCaptureInterceptor(param.getResult());
+                                } catch (Throwable t) {
+                                    Log.printStackTrace(t);
+                                }
+                            }
+                        });
+                Log.i(TAG, "hook okhttp newBuilder successfully");
+            } else {
+                Log.i(TAG, "okhttp3.OkHttpClient not found, skip okhttp capture");
+            }
+        } catch (Throwable t) {
+            Log.i(TAG, "hook okhttp newBuilder err:");
+            Log.printStackTrace(TAG, t);
+        }
+    }
+
+    /**
+     * 往 okhttp3.Builder 追加一个抓包 Interceptor,记录请求与响应。
+     * 借用反射调用 Builder.addInterceptor(Interceptor),Interceptor 接口本身用无参的
+     * {@link java.lang.reflect.InvocationHandler} 动态代理实现,避免直接依赖 okhttp3 类型。
+     */
+    private static void addOkHttpCaptureInterceptor(Object builder) throws Throwable {
+        if (builder == null) {
+            return;
+        }
+        ClassLoader cl = builder.getClass().getClassLoader();
+        // okhttp3.Interceptor 接口
+        Class<?> interceptorClazz = XHelpers.findClassIfExists("okhttp3.Interceptor", cl);
+        // okhttp3.Response(用于判断是否可用)
+        Class<?> responseClazz = XHelpers.findClassIfExists("okhttp3.Response", cl);
+        if (interceptorClazz == null || responseClazz == null) {
+            return;
+        }
+        Object proxy = java.lang.reflect.Proxy.newProxyInstance(
+                interceptorClazz.getClassLoader(),
+                new Class<?>[]{interceptorClazz},
+                new java.lang.reflect.InvocationHandler() {
+                    @Override
+                    public Object invoke(Object proxy, Method method, Object[] args) throws Throwable {
+                        if (args != null && args.length == 1 && "intercept".equals(method.getName())) {
+                            Object chain = args[0];
+                            // 先无条件放行原链路并取得响应,日志部分再 try/catch,绝不因抓包失败破坏请求
+                            Object request = XHelpers.callMethod(chain, "request");
+                            Object response = XHelpers.callMethod(chain, "proceed", request);
+                            try {
+                                String methodName = String.valueOf(XHelpers.callMethod(request, "method"));
+                                String url = String.valueOf(XHelpers.callMethod(request, "url"));
+                                // 响应码(仅记录,不消费 body,避免破坏后续读取)
+                                String code = "";
+                                try {
+                                    code = String.valueOf(XHelpers.callMethod(response, "code"));
+                                } catch (Throwable ignore) {
+                                }
+                                Log.debug("[HTTP] " + methodName + " " + url + " → " + code + "\n");
+                            } catch (Throwable t) {
+                                Log.printStackTrace(t);
+                            }
+                            return response;
+                        }
+                        return null;
+                    }
+                });
+        XHelpers.callMethod(builder, "addInterceptor", proxy);
+    }
+
     private synchronized static void destroyHandler(Boolean force) {
         try {
             if (force) {
@@ -667,6 +797,21 @@ public class ApplicationHook {
                         Log.printStackTrace(e);
                     }
                 }
+                if (webviewCaptureUnhook != null) {
+                    try {
+                        webviewCaptureUnhook.unhook();
+                    } catch (Exception e) {
+                        Log.printStackTrace(e);
+                    }
+                }
+                if (okhttpCaptureUnhook != null) {
+                    try {
+                        okhttpCaptureUnhook.unhook();
+                    } catch (Exception e) {
+                        Log.printStackTrace(e);
+                    }
+                }
+                captureHooksInstalled = false;
                 if (wakeLock != null) {
                     wakeLock.release();
                     wakeLock = null;
@@ -983,6 +1128,18 @@ public class ApplicationHook {
                         // UI 侧修改日志开关等共享配置后通知本进程重载，使开关在注入进程中即时生效
                         try {
                             AppConfig.load();
+                            // 抓包开关改动后无需重启支付宝:立即重装 HTTP/WebView 抓包钩子,
+                            // 否则本进程内存里的 BaseModel 开关仍是旧值,钩子不会装上/不会生效
+                            boolean capEnabled = com.surexu.sesame.data.AppConfig.INSTANCE.getEnableDebugLog()
+                                    || (BaseModel.getNewRpc().getValue()
+                                    && (BaseModel.getDebugMode().getValue() || BaseModel.getCaptureLog().getValue()));
+                            if (capEnabled) {
+                                if (!com.surexu.sesame.data.AppConfig.INSTANCE.getEnableDebugLog()) {
+                                    com.surexu.sesame.data.AppConfig.INSTANCE.setEnableDebugLog(true);
+                                    com.surexu.sesame.data.AppConfig.save();
+                                }
+                                installHttpCaptureHooks();
+                            }
                             Log.i(TAG, "reload AppConfig from UI");
                         } catch (Throwable th) {
                             Log.i(TAG, "sesame reloadConfig err:");

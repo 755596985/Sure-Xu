@@ -433,9 +433,9 @@ fun FieldItem(field: ModelField<*>, onSave: () -> Unit) {
                     checked = it
                     field.setObjectValue(it)
                     onSave()
-                    // 开启抓包(debugMode)时联动打开「抓包记录」开关,
+                    // 开启抓包(debugMode 或独立「抓包功能」captureLog)时联动打开「抓包记录」开关,
                     // 否则 hook 装上了但 Log.debug() 因 enableDebugLog=false 直接 return, 抓包日志永远为空
-                    if (field.getCode() == "debugMode" && it) {
+                    if ((field.getCode() == "debugMode" || field.getCode() == "captureLog") && it) {
                         AppConfig.INSTANCE.enableDebugLog = true
                         AppConfig.save()
                         // 通知支付宝进程重载共享配置,否则只是把 appConfig.json 落盘,

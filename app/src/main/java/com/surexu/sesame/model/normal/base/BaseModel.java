@@ -53,6 +53,8 @@ public class BaseModel extends Model {
     @Getter
     private static final BooleanModelField debugMode = new BooleanModelField("debugMode", "开启抓包(基于新接口)", false);
     @Getter
+    private static final BooleanModelField captureLog = new BooleanModelField("captureLog", "抓包功能(5分钟内生效,长时间开启可能会增加内存使用)", false);
+    @Getter
     private static final SelectAndCountModelField rpcRequestList = new SelectAndCountModelField("rpcRequestList", "RPC请求列表及每日执行数(慎用)", new LinkedHashMap<>(), AlipayrpcRequest::getList, "请填写每日执行次数");
     @Getter
     private static final SelectModelField rpcRequestTaskList= new SelectModelField("rpcRequestTaskList", "RPC可选任务列表(长按列表中的项仅移除用，内容需打开rpcResquest.json文件配置)", new LinkedHashSet<>(), AlipayrpcRequest::getList,"长按删除RPC列表项用");
@@ -109,8 +111,8 @@ public class BaseModel extends Model {
         modelFields.addField(timeoutRestart);
         modelFields.addField(backupConfigDays);
         modelFields.addField(newRpc);
-        modelFields.addField(newRpc);
         modelFields.addField(debugMode);
+        modelFields.addField(captureLog);
         modelFields.addField(rpcRequestList);
         modelFields.addField(rpcRequestTaskList);
         modelFields.addField(batteryPerm);
