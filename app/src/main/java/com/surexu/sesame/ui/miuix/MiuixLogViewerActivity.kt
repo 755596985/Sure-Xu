@@ -18,6 +18,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
@@ -29,6 +30,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -44,6 +46,9 @@ import top.yukonga.miuix.kmp.basic.IconButton
 import top.yukonga.miuix.kmp.basic.Scaffold
 import top.yukonga.miuix.kmp.basic.Text
 import top.yukonga.miuix.kmp.theme.MiuixTheme
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.collect
+import kotlinx.coroutines.isActive
 import java.io.File
 
 /**
@@ -101,6 +106,10 @@ class MiuixLogViewerActivity : MiuixBaseActivity() {
 /**
  * 日志详情页:展示指定类目的全部条目卡片。
  * 仿 LSPosed 日志界面:每条目一张卡(标签 + 时间 + 正文)。
+ *
+ * 实时刷新:页面打开期间每 2 秒重读当日日志文件,新条目自动出现;
+ * 默认跟随最新(滚动到底部),用户手动上滑查看历史时暂停自动滚动,
+ * 滑回底部后恢复跟随 —— 与 GR 版从支付宝切回即看到新日志的体验对齐并更进一步。
  */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
@@ -108,14 +117,46 @@ fun LogScreen(activity: MiuixLogViewerActivity, logType: LogType) {
     val context = LocalContext.current
     val file = logType.file
     var entries by remember(logType) { mutableStateOf(loadLogEntries(file)) }
+    val listState = rememberLazyListState()
+    var followTail by remember(logType) { mutableStateOf(true) }
+
+    // 轮询刷新:打开期间每 2 秒重读文件,内容有变化则更新列表
     LaunchedEffect(file) {
-        entries = loadLogEntries(file)
+        while (isActive) {
+            delay(2000)
+            val fresh = loadLogEntries(file)
+            val old = entries
+            if (fresh.size != old.size ||
+                (fresh.isNotEmpty() && old.isNotEmpty() && fresh.last() != old.last())
+            ) {
+                entries = fresh
+                if (followTail && fresh.isNotEmpty()) {
+                    listState.scrollToItem(index = fresh.size - 1)
+                }
+            }
+        }
+    }
+
+    // 跟随判定:用户滚动到接近底部(最后2项内)视为"跟随最新",上滑看历史则暂停跟随
+    LaunchedEffect(listState) {
+        snapshotFlow {
+            val info = listState.layoutInfo
+            val lastVisible = info.visibleItemsInfo.lastOrNull()?.index ?: 0
+            info.totalItemsCount == 0 || lastVisible >= info.totalItemsCount - 2
+        }.collect { atBottom -> followTail = atBottom }
+    }
+
+    // 首次进入直接定位到最新一条(底部)
+    LaunchedEffect(file, entries.size) {
+        if (followTail && entries.isNotEmpty()) {
+            listState.scrollToItem(index = entries.size - 1)
+        }
     }
 
     Scaffold(
         topBar = {
             LogTopBar(
-                title = logType.displayName,
+                title = logType.displayName + " · 实时",
                 onBack = { activity.finish() },
                 onExport = {
                     val exported = FileUtil.exportFile(file)
@@ -151,6 +192,7 @@ fun LogScreen(activity: MiuixLogViewerActivity, logType: LogType) {
             }
         } else {
             LazyColumn(
+                state = listState,
                 modifier = Modifier
                     .fillMaxSize()
                     .padding(padding)
