@@ -23,6 +23,10 @@ import com.surexu.sesame.util.compat.XC_MethodHook;
 import com.surexu.sesame.util.XHelpers;
 import com.surexu.sesame.util.compat.XC_LoadPackage;
 
+import java.lang.reflect.InvocationHandler;
+import java.lang.reflect.Method;
+import java.lang.reflect.Proxy;
+
 import java.util.Objects;
 
 import java.text.SimpleDateFormat;
@@ -724,7 +728,7 @@ public class ApplicationHook {
     /**
      * 往 okhttp3.Builder 追加一个抓包 Interceptor,记录请求与响应。
      * 借用反射调用 Builder.addInterceptor(Interceptor),Interceptor 接口本身用无参的
-     * {@link java.lang.reflect.InvocationHandler} 动态代理实现,避免直接依赖 okhttp3 类型。
+     * {@link InvocationHandler} 动态代理实现,避免直接依赖 okhttp3 类型。
      */
     private static void addOkHttpCaptureInterceptor(Object builder) throws Throwable {
         if (builder == null) {
@@ -738,10 +742,10 @@ public class ApplicationHook {
         if (interceptorClazz == null || responseClazz == null) {
             return;
         }
-        Object proxy = java.lang.reflect.Proxy.newProxyInstance(
+        Object proxy = Proxy.newProxyInstance(
                 interceptorClazz.getClassLoader(),
                 new Class<?>[]{interceptorClazz},
-                new java.lang.reflect.InvocationHandler() {
+                new InvocationHandler() {
                     @Override
                     public Object invoke(Object proxy, Method method, Object[] args) throws Throwable {
                         if (args != null && args.length == 1 && "intercept".equals(method.getName())) {
