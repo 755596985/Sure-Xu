@@ -210,6 +210,35 @@ public class ApplicationHook {
                 Log.printStackTrace(TAG, t);
             }
             try {
+                // Java 层拦截 native 层通过 JNI 弹出的 Toast:命中「芝麻开门/芝麻关门」等文案时直接吞掉
+                XHelpers.findAndHookMethod("android.widget.Toast", classLoader, "show", new XC_MethodHook() {
+                    @Override
+                    protected void beforeHookedMethod(MethodHookParam param) throws Throwable {
+                        try {
+                            Object toast = param.thisObject;
+                            if (toast == null) {
+                                return;
+                            }
+                            Object text = XHelpers.callMethod(toast, "getText");
+                            if (text == null) {
+                                return;
+                            }
+                            String s = String.valueOf(text);
+                            // 只精确拦截 native 层的「芝麻开门/芝麻关门」文案,避免误伤其他含「芝麻」的正常提示
+                            if (s.contains("芝麻开门") || s.contains("芝麻关门")) {
+                                param.setResult(null);
+                            }
+                        } catch (Throwable t) {
+                            // 不阻断正常流程
+                        }
+                    }
+                });
+                Log.i(TAG, "hook toast filter successfully");
+            } catch (Throwable t) {
+                Log.i(TAG, "hook toast filter err:");
+                Log.printStackTrace(TAG, t);
+            }
+            try {
                 XHelpers.findAndHookMethod("com.alipay.mobile.quinox.LauncherActivity", classLoader, "onResume", new XC_MethodHook() {
                     @Override
                     protected void afterHookedMethod(MethodHookParam param) {

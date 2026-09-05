@@ -82,6 +82,7 @@ import top.yukonga.miuix.kmp.basic.SmallTitle
 import top.yukonga.miuix.kmp.basic.Switch
 import top.yukonga.miuix.kmp.basic.Text
 import top.yukonga.miuix.kmp.basic.TextButton
+import top.yukonga.miuix.kmp.basic.TextField
 import top.yukonga.miuix.kmp.preference.ArrowPreference
 import top.yukonga.miuix.kmp.preference.RadioButtonPreference
 import top.yukonga.miuix.kmp.preference.SwitchPreference
@@ -892,19 +893,57 @@ fun ConfigTab(activity: MiuixMainActivity) {
         )
     }
 
-    CardColumn {
-        ModelGroup.values().forEach { g ->
-            GroupEntryRow(
-                emoji = GROUP_EMOJI[g] ?: "📦",
-                title = g.getName(),
-                subtitle = GROUP_DESC[g] ?: "",
-                onClick = {
-                    val intent = Intent(context, MiuixSettingsActivity::class.java)
-                    if (selectedUserId != null) intent.putExtra("userId", selectedUserId)
-                    intent.putExtra("group", g.code)
-                    context.startActivity(intent)
-                }
+    // 顶部搜索框:按分组名/描述过滤配置分组入口
+    var searchText by remember { mutableStateOf("") }
+    val query = searchText.trim()
+    val filteredGroups = if (query.isEmpty()) {
+        ModelGroup.values().toList()
+    } else {
+        ModelGroup.values().filter { g ->
+            g.getName().contains(query, ignoreCase = true) ||
+                g.code.contains(query, ignoreCase = true) ||
+                (GROUP_DESC[g] ?: "").contains(query, ignoreCase = true)
+        }
+    }
+    TextField(
+        value = searchText,
+        onValueChange = { searchText = it },
+        label = "搜索配置",
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 4.dp)
+    )
+    Spacer(Modifier.height(4.dp))
+
+    if (query.isNotEmpty() && filteredGroups.isEmpty()) {
+        // 无匹配结果时给出提示,占满空间避免底部空白
+        Box(
+            Modifier
+                .fillMaxWidth()
+                .padding(top = 48.dp),
+            contentAlignment = Alignment.Center
+        ) {
+            Text(
+                text = "未找到相关配置",
+                fontSize = 14.sp,
+                color = MiuixTheme.colorScheme.onSurfaceVariantSummary
             )
+        }
+    } else {
+        CardColumn {
+            filteredGroups.forEach { g ->
+                GroupEntryRow(
+                    emoji = GROUP_EMOJI[g] ?: "📦",
+                    title = g.getName(),
+                    subtitle = GROUP_DESC[g] ?: "",
+                    onClick = {
+                        val intent = Intent(context, MiuixSettingsActivity::class.java)
+                        if (selectedUserId != null) intent.putExtra("userId", selectedUserId)
+                        intent.putExtra("group", g.code)
+                        context.startActivity(intent)
+                    }
+                )
+            }
         }
     }
     Spacer(Modifier.height(16.dp))
