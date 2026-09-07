@@ -44,6 +44,7 @@ public class KBOrchard extends ModelTask {
     private BooleanModelField receiveFutureWater;
     private BooleanModelField signInReward;
     private BooleanModelField taskReward;
+    private BooleanModelField autoBrowseTask;
     private BooleanModelField autoWatering;
     private IntegerModelField waterTimes;
     private IntegerModelField waterThreshold;
@@ -69,6 +70,7 @@ public class KBOrchard extends ModelTask {
         modelFields.addField(receiveFutureWater = new BooleanModelField("receiveFutureWater", "收水滴 | 未来水", true));
         modelFields.addField(signInReward = new BooleanModelField("signInReward", "收水滴 | 签到奖励", true));
         modelFields.addField(taskReward = new BooleanModelField("taskReward", "阳光卡 | 任务奖励", true));
+        modelFields.addField(autoBrowseTask = new BooleanModelField("autoBrowseTask", "阳光卡 | 自动浏览任务(PAGEVIEW上报)", false));
         modelFields.addField(autoWatering = new BooleanModelField("autoWatering", "浇水 | 自动浇水", true));
         modelFields.addField(waterTimes = new IntegerModelField("waterTimes", "浇水 | 每次触发浇水次数(0=按水量自动)", 0));
         modelFields.addField(waterThreshold = new IntegerModelField("waterThreshold", "浇水 | 剩余水滴低于该值停止", 10));
@@ -107,6 +109,9 @@ public class KBOrchard extends ModelTask {
             }
             if (taskReward.getValue()) {
                 taskReward();
+            }
+            if (autoBrowseTask.getValue()) {
+                autoBrowseTask();
             }
             if (autoWatering.getValue()) {
                 watering();
@@ -243,6 +248,83 @@ public class KBOrchard extends ModelTask {
                     Status.flagToday(flag);
                     Log.record("饿了么果园:已领取任务奖励 missionId=" + missionId);
                 }
+                TimeUtil.sleep(executeInterval.getValue());
+            }
+        } catch (Throwable t) {
+            Log.printStackTrace(TAG, t);
+        }
+    }
+
+    /* ============================ 阳光卡：自动浏览任务 ============================ */
+
+    /**
+     * 对"支付宝换量 / 商业化-浏览"类 PAGEVIEW 任务做曝光上报，纯 RPC 完成浏览。
+     * 数据来源 shared_log_1788774358016.log：上报 event.pageview 后该任务可落成 finish 并可 receiveprize 领奖。
+     */
+    private void autoBrowseTask() {
+        try {
+            String resp = KBOrchardRpcCall.queryTask(latitude.getValue(), longitude.getValue());
+            if (resp == null) {
+                return;
+            }
+            JSONObject jo = new JSONObject(resp);
+            JSONArray mlist = findArray(jo, "mlist");
+            if (mlist == null) {
+                return;
+            }
+            for (int i = 0; i < mlist.length(); i++) {
+                JSONObject m = mlist.optJSONObject(i);
+                if (m == null) {
+                    continue;
+                }
+                long defId = m.optLong("missionDefId", 0);
+                if (defId <= 0) {
+                    continue;
+                }
+                String missionId = String.valueOf(defId);
+                String flag = "KBOrchard::browse::" + missionId;
+                if (Status.hasFlagToday(flag)) {
+                    continue;
+                }
+                // 该任务是否为 PAGEVIEW 浏览类：actionConfig.actionType == PAGEVIEW
+                JSONObject ac = m.optJSONObject("actionConfig");
+                if (ac == null) {
+                    continue;
+                }
+                if (!"PAGEVIEW".equals(ac.optString("actionType"))) {
+                    continue;
+                }
+                JSONObject av = ac.optJSONObject("actionValue");
+                if (av == null) {
+                    continue;
+                }
+                // 已完成/已领奖的任务无需上报
+                JSONObject ext = m.optJSONObject("ext");
+                int finishStatus = 0;
+                if (ext != null) {
+                    JSONObject ev = ext.optJSONObject("extValue");
+                    if (ev != null) {
+                        finishStatus = ev.optInt("finishStatus", 0);
+                    }
+                }
+                if (finishStatus == 2) {
+                    continue;
+                }
+                String missionXId = m.optString("missionXId", "");
+                String pageFrom = av.optString("pageSpm", "");
+                String viewTime = av.optString("pageStageTime", "5");
+                if (missionXId.isEmpty() || pageFrom.isEmpty()) {
+                    Log.i(TAG, "浏览任务 missionId=" + missionId + " 缺 missionXId/pageSpm，跳过");
+                    continue;
+                }
+                String r = KBOrchardRpcCall.pageView(missionId, missionXId, pageFrom, viewTime);
+                if (r == null) {
+                    Log.i(TAG, "浏览上报失败 missionId=" + missionId);
+                    continue;
+                }
+                Status.flagToday(flag);
+                Log.record("饿了么果园:已上报浏览任务 missionId=" + missionId + "(" + m.optString("name", "") + ")");
+                // 上报后等待并尝试领奖（taskReward 会自行处理，这里间隔一下风控）
                 TimeUtil.sleep(executeInterval.getValue());
             }
         } catch (Throwable t) {

@@ -35,6 +35,11 @@ public class KBOrchardRpcCall {
     public static final String API_QUERY_TASK = "mtop.ele.biz.growth.task.core.querytask"; // 1.0 false
     public static final String API_RECEIVE_PRIZE = "mtop.ele.biz.growth.task.core.receiveprize"; // 1.0 true
     public static final String API_USE_PROP = "mtop.alsc.playgame.orchard.roleOperate.useProp"; // 1.0 true
+    // 浏览任务曝光上报（纯 RPC 完成浏览，数据来源 shared_log_1788774358016.log）
+    public static final String API_PAGEVIEW = "mtop.ele.biz.growth.task.event.pageview"; // 1.0 true
+
+    /** 浏览上报固定安全码（抓包值，失效可改） */
+    public static final String PAGEVIEW_ASAC = "2A20B11WIAXCI9QYYXRIR0";
 
     /* ---------------- index.batch.query 原始 payload（抓包原样，坐标动态替换） ---------------- */
     private static final String IDX_LOCATION = "[{\"latitude\":\"%s\",\"longitude\":\"%s\",\"lat\":\"%s\",\"lng\":\"%s\"}]";
@@ -232,6 +237,25 @@ public class KBOrchardRpcCall {
         } catch (Throwable ignored) {
         }
         return request(API_USE_PROP, "1.0", data.toString(), true);
+    }
+
+    /** 浏览任务曝光上报（纯 RPC 完成 PAGEVIEW 浏览任务）。参数取自 shared_log_1788774358016.log，asac 为抓包固定值。 */
+    public static String pageView(String missionId, String missionXId, String pageFrom, String viewTime) {
+        JSONObject data = new JSONObject();
+        try {
+            data.put("accountPlan", "HAVANA_COMMON");
+            data.put("actionCode", "PAGEVIEW");
+            data.put("asac", PAGEVIEW_ASAC);
+            data.put("bizScene", "ORCHARD");
+            data.put("collectionId", "178");
+            data.put("missionId", missionId);
+            data.put("missionXId", missionXId);
+            data.put("pageFrom", pageFrom);
+            data.put("sync", "false");
+            data.put("viewTime", viewTime);
+        } catch (Throwable ignored) {
+        }
+        return request(API_PAGEVIEW, "1.0", data.toString(), true);
     }
 
     /* ============================ 反射辅助 ============================ */
