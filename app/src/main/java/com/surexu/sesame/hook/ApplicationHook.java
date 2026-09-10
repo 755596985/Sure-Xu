@@ -153,6 +153,9 @@ public class ApplicationHook {
     // mtop 接口抓包(请求参数/响应) hook 句柄与安装标记
     private static XC_MethodHook.Unhook mtopDumpUnhook;
 
+    // ariver 小程序容器 RPC(operationType) 抓包 hook 句柄
+    private static XC_MethodHook.Unhook ariverDumpUnhook;
+
     private static volatile boolean mtopDumpHooksInstalled = false;
 
     private static BroadcastReceiver broadcastReceiver = null;
@@ -871,8 +874,111 @@ public class ApplicationHook {
                     });
             mtopDumpHooksInstalled = true;
             Log.i(TAG, "install mtop dump hooks successfully");
+            installAriverDumpHooks();
         } catch (Throwable t) {
             Log.i(TAG, "install mtop dump hooks err:");
+            Log.printStackTrace(TAG, t);
+        }
+    }
+
+    /**
+     * hook ariver 小程序容器 RPC 出口 RpcBridgeExtension.rpc：
+     * 覆盖支付宝小程序(my.call / XRiver)里以 operationType+requestData 发起的容器 RPC，
+     * 如 alipay.openservice.yao.* 这类不走 mtopsdk MtopBuilder 的请求。
+     * 与 MTOP dump 同一开关，仅记录不改动请求/响应。
+     */
+    private static void installAriverDumpHooks() {
+        if (ariverDumpUnhook != null) {
+            return;
+        }
+        try {
+            Class<?> extClazz = XHelpers.findClassIfExists("com.alibaba.ariver.commonability.network.rpc.RpcBridgeExtension", classLoader);
+            if (extClazz == null) {
+                Log.i(TAG, "RpcBridgeExtension not found, skip ariver rpc dump");
+                return;
+            }
+            Method target = null;
+            for (Method m : extClazz.getDeclaredMethods()) {
+                if ("rpc".equals(m.getName()) && m.getParameterTypes().length == 16) {
+                    target = m;
+                    break;
+                }
+            }
+            if (target == null) {
+                for (Method m : extClazz.getMethods()) {
+                    if ("rpc".equals(m.getName()) && m.getParameterTypes().length == 16) {
+                        target = m;
+                        break;
+                    }
+                }
+            }
+            if (target == null) {
+                Log.i(TAG, "no RpcBridgeExtension.rpc(16args) method found, skip ariver rpc dump");
+                return;
+            }
+            final ClassLoader hostLoader = extClazz.getClassLoader();
+            ariverDumpUnhook = XHelpers.hookMember(target, new XC_MethodHook() {
+                @Override
+                protected void beforeHookedMethod(MethodHookParam param) throws Throwable {
+                    try {
+                        Object json = param.args[4];
+                        if (json == null) {
+                            return;
+                        }
+                        String operationType = safeStr(XHelpers.callMethod(json, "getString", "operationType"));
+                        String reqData;
+                        try {
+                            Object rd = XHelpers.callMethod(json, "get", "requestData");
+                            reqData = rd == null ? "" : String.valueOf(rd);
+                        } catch (Throwable ignore) {
+                            reqData = safeStr(XHelpers.callMethod(json, "getString", "requestData"));
+                        }
+                        if (operationType.length() == 0 && reqData.length() == 0) {
+                            return;
+                        }
+                        Log.mtop("\n[ARIVER REQ] operationType=" + operationType + "\n" + reqData);
+                    } catch (Throwable t) {
+                        Log.printStackTrace(t);
+                    }
+                }
+
+                @Override
+                protected void afterHookedMethod(MethodHookParam param) throws Throwable {
+                    try {
+                        Object origCb = param.args[15];
+                        if (origCb == null || Proxy.isProxyClass(origCb.getClass())) {
+                            return;
+                        }
+                        final Class<?>[] ifaces = origCb.getClass().getInterfaces();
+                        if (ifaces == null || ifaces.length == 0) {
+                            return;
+                        }
+                        final Object delegate = origCb;
+                        final String op = safeStr(XHelpers.callMethod(param.args[4], "getString", "operationType"));
+                        param.args[15] = Proxy.newProxyInstance(hostLoader, ifaces, new InvocationHandler() {
+                            @Override
+                            public Object invoke(Object proxy, Method method, Object[] innerArgs) throws Throwable {
+                                if ("sendJSONResponse".equals(method.getName()) && innerArgs != null && innerArgs.length == 1) {
+                                    try {
+                                        Object obj = innerArgs[0];
+                                        String json = String.valueOf(XHelpers.callMethod(obj, "toJSONString"));
+                                        Log.mtop("\n[ARIVER RESP] operationType=" + op + "\n" + json);
+                                    } catch (Throwable ignore) {
+                                    }
+                                }
+                                return method.invoke(delegate, innerArgs);
+                            }
+                        });
+                    } catch (Throwable t) {
+                        Log.printStackTrace(t);
+                    }
+                }
+            });
+            if (ariverDumpUnhook != null) {
+                Log.i(TAG, "install ariver rpc dump hooks successfully");
+            }
+        } catch (Throwable t) {
+            Log.i(TAG, "install ariver rpc dump hooks err:");
             Log.printStackTrace(TAG, t);
         }
     }
@@ -963,6 +1069,14 @@ public class ApplicationHook {
                         Log.printStackTrace(e);
                     }
                     mtopDumpUnhook = null;
+                }
+                if (ariverDumpUnhook != null) {
+                    try {
+                        ariverDumpUnhook.unhook();
+                    } catch (Exception e) {
+                        Log.printStackTrace(e);
+                    }
+                    ariverDumpUnhook = null;
                 }
                 mtopDumpHooksInstalled = false;
                 if (wakeLock != null) {
