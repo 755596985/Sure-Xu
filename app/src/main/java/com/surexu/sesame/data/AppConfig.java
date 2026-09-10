@@ -32,6 +32,7 @@ public class AppConfig {
     private Boolean enableFarmLog = true;
     private Boolean enableOtherLog = true;
     private Boolean enableDebugLog = false;
+    private Boolean enableMtopDumpLog = false;
     private Boolean enableViewErrorLog = true;
     private Boolean enableViewRuntimeLog = true;
 
@@ -70,6 +71,9 @@ public class AppConfig {
 
     public Boolean getEnableDebugLog() { return enableDebugLog; }
     public void setEnableDebugLog(Boolean value) { enableDebugLog = value; }
+
+    public Boolean getEnableMtopDumpLog() { return enableMtopDumpLog; }
+    public void setEnableMtopDumpLog(Boolean value) { enableMtopDumpLog = value; }
 
     public Boolean getEnableViewErrorLog() { return enableViewErrorLog; }
     public void setEnableViewErrorLog(Boolean value) { enableViewErrorLog = value; }

@@ -150,6 +150,11 @@ public class ApplicationHook {
 
     private static volatile boolean captureHooksInstalled = false;
 
+    // mtop 接口抓包(请求参数/响应) hook 句柄与安装标记
+    private static XC_MethodHook.Unhook mtopDumpUnhook;
+
+    private static volatile boolean mtopDumpHooksInstalled = false;
+
     private static BroadcastReceiver broadcastReceiver = null;
 
     private static volatile boolean broadcastReceiverRegistered = false;
@@ -669,6 +674,13 @@ public class ApplicationHook {
                         Log.printStackTrace(TAG, t);
                     }
                 }
+                // mtop 接口抓包:独立开关,与 HTTP/WebView 抓包无关,无需 root 抓包工具
+                boolean mtopDumpEnabled = BaseModel.getNewRpc().getValue() && BaseModel.getMtopDump().getValue();
+                if (mtopDumpEnabled) {
+                    com.surexu.sesame.data.AppConfig.INSTANCE.setEnableMtopDumpLog(true);
+                    com.surexu.sesame.data.AppConfig.save();
+                    installMtopDumpHooks();
+                }
                 NotificationUtil.start(service);
                 Model.bootAllModel(classLoader);
                 Status.load();
@@ -803,6 +815,105 @@ public class ApplicationHook {
         XHelpers.callMethod(builder, "addInterceptor", proxy);
     }
 
+    /**
+     * hook mtopsdk MtopBuilder.syncRequest：打印 MTOP 请求参数与响应(无需 root 抓包工具)。
+     * 走宿主合法登录态/wua，自动覆盖支付宝内全部 mtop(含 customDomain=mtop.ele.me 的饿了么链路)。
+     * 仅记录不改动请求/响应，绝不干扰业务。
+     */
+    private static void installMtopDumpHooks() {
+        if (mtopDumpHooksInstalled) {
+            return;
+        }
+        try {
+            Class<?> mtopBuilderClazz = XHelpers.findClassIfExists("mtopsdk.mtop.intf.MtopBuilder", classLoader);
+            if (mtopBuilderClazz == null) {
+                Log.i(TAG, "mtopsdk.mtop.intf.MtopBuilder not found, skip mtop dump");
+                return;
+            }
+            mtopDumpUnhook = XHelpers.findAndHookMethod(
+                    mtopBuilderClazz, "syncRequest",
+                    new XC_MethodHook() {
+                        @Override
+                        protected void beforeHookedMethod(MethodHookParam param) throws Throwable {
+                            try {
+                                Object req = getMtopRequest(param.thisObject);
+                                if (req == null) {
+                                    return;
+                                }
+                                String api = safeStr(XHelpers.callMethod(req, "getApiName"));
+                                String ver = safeStr(XHelpers.callMethod(req, "getVersion"));
+                                String data = safeStr(XHelpers.callMethod(req, "getData"));
+                                Log.mtop("\n[MTOP REQ] api=" + api + " v=" + ver + "\n" + data);
+                            } catch (Throwable t) {
+                                Log.printStackTrace(t);
+                            }
+                        }
+
+                        @Override
+                        protected void afterHookedMethod(MethodHookParam param) throws Throwable {
+                            try {
+                                Object resp = param.getResult();
+                                if (resp == null) {
+                                    return;
+                                }
+                                StringBuilder sb = new StringBuilder("\n[MTOP RESP]");
+                                sb.append(" retCode=").append(safeStr(XHelpers.callMethod(resp, "getRetCode")));
+                                sb.append(" retMsg=").append(safeStr(XHelpers.callMethod(resp, "getRetMsg")));
+                                try {
+                                    sb.append("\n").append(safeStr(XHelpers.callMethod(resp, "getDataJsonObject")));
+                                } catch (Throwable ignore) {
+                                }
+                                Log.mtop(sb.toString());
+                            } catch (Throwable t) {
+                                Log.printStackTrace(t);
+                            }
+                        }
+                    });
+            mtopDumpHooksInstalled = true;
+            Log.i(TAG, "install mtop dump hooks successfully");
+        } catch (Throwable t) {
+            Log.i(TAG, "install mtop dump hooks err:");
+            Log.printStackTrace(TAG, t);
+        }
+    }
+
+    private static Object getMtopRequest(Object builder) {
+        if (builder == null) {
+            return null;
+        }
+        try {
+            Object r = XHelpers.callMethod(builder, "getRequest");
+            if (r != null) {
+                return r;
+            }
+        } catch (Throwable ignore) {
+        }
+        try {
+            for (java.lang.reflect.Field f : builder.getClass().getDeclaredFields()) {
+                if (f.getType().getName().contains("MtopRequest")) {
+                    f.setAccessible(true);
+                    Object r = f.get(builder);
+                    if (r != null) {
+                        return r;
+                    }
+                }
+            }
+        } catch (Throwable ignore) {
+        }
+        return null;
+    }
+
+    private static String safeStr(Object o) {
+        if (o == null) {
+            return "";
+        }
+        try {
+            return String.valueOf(o);
+        } catch (Throwable t) {
+            return "";
+        }
+    }
+
     private synchronized static void destroyHandler(Boolean force) {
         try {
             if (force) {
@@ -845,6 +956,15 @@ public class ApplicationHook {
                     }
                 }
                 captureHooksInstalled = false;
+                if (mtopDumpUnhook != null) {
+                    try {
+                        mtopDumpUnhook.unhook();
+                    } catch (Exception e) {
+                        Log.printStackTrace(e);
+                    }
+                    mtopDumpUnhook = null;
+                }
+                mtopDumpHooksInstalled = false;
                 if (wakeLock != null) {
                     wakeLock.release();
                     wakeLock = null;
@@ -1172,6 +1292,13 @@ public class ApplicationHook {
                                     com.surexu.sesame.data.AppConfig.save();
                                 }
                                 installHttpCaptureHooks();
+                            }
+                            // mtop 接口抓包头是否开启:UI 修改开关后即时重装/卸载钩子
+                            boolean mtopDumpEnabled = BaseModel.getNewRpc().getValue() && BaseModel.getMtopDump().getValue();
+                            if (mtopDumpEnabled) {
+                                com.surexu.sesame.data.AppConfig.INSTANCE.setEnableMtopDumpLog(true);
+                                com.surexu.sesame.data.AppConfig.save();
+                                installMtopDumpHooks();
                             }
                             Log.i(TAG, "reload AppConfig from UI");
                         } catch (Throwable th) {

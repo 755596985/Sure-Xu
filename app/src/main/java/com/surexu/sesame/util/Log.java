@@ -170,6 +170,21 @@ public class Log {
         debugLogger.d(s);
     }
 
+    public static void mtop(String s) {
+        if (!com.surexu.sesame.data.AppConfig.INSTANCE.getEnableMtopDumpLog()) {
+            return;
+        }
+        mtopLogger.i(s);
+    }
+
+    private static final Logger mtopLogger = XLog.tag("MTOP").printers(
+            new FilePrinter.Builder(FileUtil.LOG_DIRECTORY_FILE.getPath())
+                    .fileNameGenerator(new CustomDateFileNameGenerator("mtop"))
+                    .backupStrategy(new NeverBackupStrategy())
+                    .cleanStrategy(new NeverCleanStrategy())
+                    .flattener(new PatternFlattener("{d HH:mm:ss.SSS} {m}"))
+                    .build()).build();
+
     public static void error(String s) {
         if (com.surexu.sesame.data.AppConfig.INSTANCE.getEnableViewErrorLog()) {
             errorLogger.i(s);
