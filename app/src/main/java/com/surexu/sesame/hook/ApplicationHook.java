@@ -963,8 +963,12 @@ public class ApplicationHook {
             Log.mtop("[HOOK:" + processName + "] installing mtop dump hooks -> " + mtopBuilderClazz.getName());
             // 1) MtopBuilder 上所有 sync/async 发送重载(不限参数个数/签名), 任意路径都能命中
             int overloads = hookAllMtopSendMethods(mtopBuilderClazz);
-            // 2) 兜底: 静态 Mtop.build(MtopBuilder), 所有请求必经的构建工厂(兼容版本差异)
-            hookMtopBuild(cl);
+            // 2) 兜底: 静态 Mtop.build(MtopBuilder)——仅当发送方法一个都没挂上时才启用,
+            //    否则 build 阶段拿到的 builder 是半成品, 只会刷出 host/wua/ttid 全空的空 REQ。
+            if (overloads == 0) {
+                Log.mtop("[HOOK:" + processName + "] no sync/async send method hooked, enable Mtop.build fallback");
+                hookMtopBuild(cl);
+            }
             mtopDumpHooksInstalled = true;
             Log.mtop("[HOOK:" + processName + "] mtop dump hooks installed OK, sendOverloads=" + overloads);
             Log.i(TAG, "install mtop dump hooks successfully");
@@ -991,11 +995,13 @@ public class ApplicationHook {
                     XHelpers.hookMember(m, new XC_MethodHook() {
                         @Override
                         protected void beforeHookedMethod(MethodHookParam param) throws Throwable {
-                            logMtopRequestDump(param.thisObject, "MTOP");
+                            // 发送前 builder 字段可能尚未完整配置, 这里不打印, 避免空 REQ 刷屏;
+                            // 完整字段统一在 after 阶段打出。
                         }
 
                         @Override
                         protected void afterHookedMethod(MethodHookParam param) throws Throwable {
+                            logMtopRequestDump(param.thisObject, "MTOP");
                             logMtopResponseDump(param);
                         }
                     });
@@ -1064,7 +1070,7 @@ public class ApplicationHook {
             if (req != null) {
                 api = tryGetStr(req, "getApiName");
                 ver = tryGetStr(req, "getVersion");
-                data = tryGetStr(req, "getData");
+                data = tryGetStr(req, "getData", "getDataText");
             }
             if (data.length() == 0) {
                 data = tryGetStr(builder, "getData");
@@ -1072,10 +1078,21 @@ public class ApplicationHook {
             String host = tryGetStr(builder, "getCustomHost", "getCustomDomain");
             String wua = tryGetStr(builder, "getNeedWua");
             String ttid = tryGetStr(builder, "getTtid");
-            // 全空过滤: hook 到未配置完成/非 MTOP 的 builder 时什么都不打, 避免空 REQ 刷屏
-            if (api.length() == 0 && ver.length() == 0 && data.length() == 0
-                    && host.length() == 0 && wua.length() == 0 && ttid.length() == 0) {
-                return;
+            // getter 反射失败(宿主版本字段/方法改名)时, 退化为字段级反射: 直接从 req/builder 的字段里捞 api/data
+            String extra = "";
+            if (api.length() == 0 && data.length() == 0) {
+                if (req != null) {
+                    extra = dumpObjectFields(req);
+                }
+                if (extra.isEmpty()) {
+                    extra = dumpObjectFields(builder);
+                }
+                if (api.length() == 0) {
+                    api = pickField(extra, "apiName", "api");
+                }
+                if (data.length() == 0) {
+                    data = pickField(extra, "data", "reqData", "requestData", "req");
+                }
             }
             StringBuilder sb = new StringBuilder("\n[" + tag + " REQ]");
             if (api.length() > 0) {
@@ -1088,10 +1105,80 @@ public class ApplicationHook {
               .append(" wua=").append(wua)
               .append(" ttid=").append(ttid);
             sb.append("\n").append(data);
+            if (extra.length() > 0) {
+                sb.append("\n").append(extra);
+            }
+            // 组装后仍是纯空壳(任何字段都没有) → 跳过, 避免空 REQ 刷屏
+            if (api.length() == 0 && ver.length() == 0 && data.length() == 0
+                    && host.length() == 0 && wua.length() == 0 && ttid.length() == 0) {
+                return;
+            }
             Log.mtop(sb.toString());
         } catch (Throwable t) {
             Log.printStackTrace(t);
         }
+    }
+
+    /** 反射枚举对象全部字段(含父类、私有), 拼接 " 字段名=值"; 单字段过长或不可读时安全跳过。 */
+    private static String dumpObjectFields(Object obj) {
+        if (obj == null) {
+            return "";
+        }
+        StringBuilder sb = new StringBuilder(256);
+        java.util.Set<String> seen = new java.util.HashSet<String>();
+        Class<?> c = obj.getClass();
+        while (c != null && c != Object.class) {
+            try {
+                for (java.lang.reflect.Field f : c.getDeclaredFields()) {
+                    try {
+                        if (seen.contains(f.getName())) {
+                            continue;
+                        }
+                        seen.add(f.getName());
+                        f.setAccessible(true);
+                        Object v = f.get(obj);
+                        if (v == null) {
+                            continue;
+                        }
+                        String s = String.valueOf(v);
+                        if (s.length() == 0 || s.length() > 2000) {
+                            continue;
+                        }
+                        if (sb.length() + s.length() > 8000) {
+                            break;
+                        }
+                        sb.append(' ').append(f.getName()).append('=').append(s);
+                    } catch (Throwable ignore) {
+                    }
+                }
+            } catch (Throwable ignore) {
+            }
+            c = c.getSuperclass();
+        }
+        return sb.toString();
+    }
+
+    /** 从 dumpObjectFields 的输出里捞指定语义字段的值(按候选字段名), 用于 getter 失效时兜底。 */
+    private static String pickField(String dump, String... fieldNames) {
+        if (dump == null || dump.isEmpty()) {
+            return "";
+        }
+        for (String fn : fieldNames) {
+            int idx = dump.indexOf(' ' + fn + '=');
+            if (idx < 0) {
+                continue;
+            }
+            int start = idx + fn.length() + 2;
+            int end = dump.indexOf(' ', start);
+            if (end < 0) {
+                end = dump.length();
+            }
+            String v = dump.substring(start, end).trim();
+            if (v.length() > 0) {
+                return v;
+            }
+        }
+        return "";
     }
 
     /** 打印 MTOP 同步响应(异步无返回值时自动跳过)。 */
