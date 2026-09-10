@@ -847,6 +847,21 @@ public class FileUtil {
         return otherLogFile;
     }
     
+    public static File getMtopLogFile() {
+        File mtopLogFile = new File(LOG_DIRECTORY_FILE, Log.getLogFileName("mtop"));
+        if (mtopLogFile.exists() && mtopLogFile.isDirectory()) {
+            mtopLogFile.delete();
+        }
+        if (!mtopLogFile.exists()) {
+            try {
+                mtopLogFile.createNewFile();
+            }
+            catch (Throwable ignored) {
+            }
+        }
+        return mtopLogFile;
+    }
+    
     public static File getErrorLogFile() {
         File errorLogFile = new File(LOG_DIRECTORY_FILE, Log.getLogFileName("error"));
         if (errorLogFile.exists() && errorLogFile.isDirectory()) {

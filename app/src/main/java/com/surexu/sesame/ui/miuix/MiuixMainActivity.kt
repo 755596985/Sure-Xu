@@ -676,6 +676,14 @@ fun LogsTab(activity: MiuixMainActivity) {
             activity.broadcastReloadConfig()
             if (!it) FileUtil.clearLog("debug")
         }
+        var mtopDump by remember { mutableStateOf(AppConfig.INSTANCE.enableMtopDumpLog ?: false) }
+        LogSwitchRow("MTOP抓包", mtopDump, onClick = { openLog(activity, LogType.MTOP) }) {
+            mtopDump = it
+            AppConfig.INSTANCE.enableMtopDumpLog = it
+            AppConfig.save()
+            activity.broadcastReloadConfig()
+            if (!it) FileUtil.clearLog("mtop")
+        }
         var error by remember { mutableStateOf(AppConfig.INSTANCE.enableViewErrorLog ?: true) }
         LogSwitchRow("查看异常日志", error, onClick = { openLog(activity, LogType.ERROR) }) {
             error = it

@@ -1,10 +1,14 @@
 package com.surexu.sesame.ui.miuix
 
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.content.Context
 import android.content.Intent
 import android.os.Bundle
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.basicMarquee
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -23,12 +27,15 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Upload
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
@@ -49,6 +56,7 @@ import top.yukonga.miuix.kmp.theme.MiuixTheme
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.isActive
+import kotlinx.coroutines.launch
 import java.io.File
 
 /**
@@ -60,6 +68,7 @@ enum class LogType(val displayName: String) {
     FARM("庄园记录"),
     OTHER("其他记录"),
     DEBUG("抓包记录"),
+    MTOP("MTOP抓包"),
     ERROR("查看异常日志"),
     RUNTIME("查看运行日志");
 
@@ -70,6 +79,7 @@ enum class LogType(val displayName: String) {
             FARM -> FileUtil.getFarmLogFile()
             OTHER -> FileUtil.getOtherLogFile()
             DEBUG -> FileUtil.getDebugLogFile()
+            MTOP -> FileUtil.getMtopLogFile()
             ERROR -> FileUtil.getErrorLogFile()
             RUNTIME -> FileUtil.getRuntimeLogFile()
         }
@@ -118,22 +128,29 @@ fun LogScreen(activity: MiuixLogViewerActivity, logType: LogType) {
     val file = logType.file
     var entries by remember(logType) { mutableStateOf(loadLogEntries(file)) }
     val listState = rememberLazyListState()
+    val scope = rememberCoroutineScope()
     var followTail by remember(logType) { mutableStateOf(true) }
+
+    // 统一重读日志:返回是否有新内容;跟随最新时自动滚到末尾
+    fun reload(): Boolean {
+        val fresh = loadLogEntries(file)
+        val old = entries
+        val changed = fresh.size != old.size ||
+            (fresh.isNotEmpty() && old.isNotEmpty() && fresh.last() != old.last())
+        if (changed) {
+            entries = fresh
+            if (followTail && fresh.isNotEmpty()) {
+                scope.launch { listState.scrollToItem(index = fresh.size - 1) }
+            }
+        }
+        return changed
+    }
 
     // 轮询刷新:打开期间每 2 秒重读文件,内容有变化则更新列表
     LaunchedEffect(file) {
         while (isActive) {
             delay(2000)
-            val fresh = loadLogEntries(file)
-            val old = entries
-            if (fresh.size != old.size ||
-                (fresh.isNotEmpty() && old.isNotEmpty() && fresh.last() != old.last())
-            ) {
-                entries = fresh
-                if (followTail && fresh.isNotEmpty()) {
-                    listState.scrollToItem(index = fresh.size - 1)
-                }
-            }
+            reload()
         }
     }
 
@@ -153,11 +170,28 @@ fun LogScreen(activity: MiuixLogViewerActivity, logType: LogType) {
         }
     }
 
+    // 手动刷新:立即重读文件,无新内容时给出提示
+    fun manualRefresh() {
+        if (!reload()) {
+            ToastUtil.show(context, "没有新日志")
+        }
+    }
+
+    // 一键回到最新:瞬间跳到末尾并恢复跟随
+    fun jumpToBottom() {
+        followTail = true
+        if (entries.isNotEmpty()) {
+            scope.launch { listState.scrollToItem(index = entries.size - 1) }
+        }
+    }
+
     Scaffold(
         topBar = {
             LogTopBar(
                 title = logType.displayName + " · 实时",
                 onBack = { activity.finish() },
+                onRefresh = { manualRefresh() },
+                onScrollToBottom = { jumpToBottom() },
                 onExport = {
                     val exported = FileUtil.exportFile(file)
                     if (exported != null) {
@@ -208,14 +242,20 @@ fun LogScreen(activity: MiuixLogViewerActivity, logType: LogType) {
     }
 }
 
-/** 单条日志卡片:标题(TAG)+ 右上时间戳 + 下方正文 */
+/** 单条日志卡片:标题(TAG)+ 右上时间戳 + 下方正文;点击或长按复制整条内容 */
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun LogEntryCard(entry: LogEntry) {
+    val context = LocalContext.current
     Column(
         Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(12.dp))
             .background(MiuixTheme.colorScheme.surfaceContainer)
+            .combinedClickable(
+                onClick = { copyLogEntry(context, entry) },
+                onLongClick = { copyLogEntry(context, entry) }
+            )
             .padding(12.dp)
     ) {
         Row(
@@ -255,6 +295,8 @@ fun LogEntryCard(entry: LogEntry) {
 fun LogTopBar(
     title: String,
     onBack: () -> Unit,
+    onRefresh: (() -> Unit)? = null,
+    onScrollToBottom: (() -> Unit)? = null,
     onImport: (() -> Unit)? = null,
     onExport: (() -> Unit)? = null,
     onClear: (() -> Unit)? = null
@@ -289,6 +331,24 @@ fun LogTopBar(
                 color = MiuixTheme.colorScheme.onBackground,
                 maxLines = 1
             )
+            if (onRefresh != null) {
+                IconButton(onClick = onRefresh) {
+                    Icon(
+                        imageVector = Icons.Filled.Refresh,
+                        contentDescription = "刷新",
+                        tint = MiuixTheme.colorScheme.onBackground
+                    )
+                }
+            }
+            if (onScrollToBottom != null) {
+                IconButton(onClick = onScrollToBottom) {
+                    Icon(
+                        imageVector = Icons.Filled.KeyboardArrowDown,
+                        contentDescription = "回到最新",
+                        tint = MiuixTheme.colorScheme.onBackground
+                    )
+                }
+            }
             if (onImport != null) {
                 IconButton(onClick = onImport) {
                     // 导入图标:把 Upload 旋转 180°(朝下)与导出(朝上)区分
@@ -322,12 +382,37 @@ fun LogTopBar(
     }
 }
 
+/** 复制日志条目(时间 + TAG + 正文)到系统剪贴板 */
+private fun copyLogEntry(context: Context, entry: LogEntry) {
+    val text = buildString {
+        if (entry.time != null) {
+            append(entry.time)
+            append(' ')
+        }
+        if (entry.tag != null) {
+            append('[')
+            append(entry.tag)
+            append("] ")
+        }
+        append(entry.body)
+    }
+    val cm = context.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager
+    if (cm != null) {
+        cm.setPrimaryClip(ClipData.newPlainText("log", text))
+        ToastUtil.show(context, "已复制")
+    } else {
+        ToastUtil.show(context, "复制失败")
+    }
+}
+
 /** 读取日志文件并按行解析为条目;无时间戳的行合并到上一条(多行日志聚合为同一卡片) */
 private fun loadLogEntries(file: File?): List<LogEntry> {
     if (file == null || !file.exists()) {
         return emptyList()
     }
-    val timeRegex = Regex("^(\\d{2}:\\d{2}:\\d{2}\\.\\d{3})\\s+(\\w+):\\s*(.*)$")
+    // 兼容两类格式:普通 "HH:mm:ss.SSS TAG: body" 与 MTOP "HH:mm:ss.SSS [MTOP REQ] body"
+    val timeRegex = Regex("^(\\d{2}:\\d{2}:\\d{2}\\.\\d{3})\\s+(.*)$")
+    val tagRegex = Regex("^(\\[[^\\]]+\\]|[\\w-]+:)\\s*(.*)$")
     val entries = mutableListOf<LogEntry>()
     return try {
         file.useLines { lines ->
@@ -336,12 +421,25 @@ private fun loadLogEntries(file: File?): List<LogEntry> {
                 lineNumber++
                 val match = timeRegex.find(line)
                 if (match != null) {
+                    val rest = match.groupValues[2]
+                    val tagMatch = tagRegex.find(rest)
+                    val tag = tagMatch
+                        ?.groupValues?.get(1)
+                        ?.removeSurrounding("[", "]")
+                        ?.removeSuffix(":")
+                        ?.takeIf { it.isNotBlank() }
+                    val body = if (tagMatch != null && tagMatch.groupValues[2].isNotBlank()) {
+                        tagMatch.groupValues[2]
+                    } else {
+                        // 无结构前缀时整段作为正文
+                        rest
+                    }
                     entries.add(
                         LogEntry(
                             lineNumber = lineNumber,
                             time = match.groupValues[1],
-                            tag = match.groupValues[2],
-                            body = match.groupValues[3]
+                            tag = tag,
+                            body = body
                         )
                     )
                 } else {
