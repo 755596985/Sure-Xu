@@ -169,11 +169,20 @@ public class ApplicationHook {
     public void handleLoadPackage(XC_LoadPackage.LoadPackageParam lpparam) {
         // 先提取进程名并赋值给全局变量
         processName = lpparam.processName; // 新增：将 Xposed 提供的进程名赋值给全局变量
-        if (ClassUtil.PACKAGE_NAME.equals(lpparam.packageName) && ClassUtil.PACKAGE_NAME.equals(lpparam.processName)) {
-            if (hooked) {
-                return;
-            }
-            classLoader = lpparam.classLoader;
+        // 非支付宝进程不处理
+        if (!ClassUtil.PACKAGE_NAME.equals(lpparam.packageName)) {
+            return;
+        }
+        // 支付宝子进程(小程序容器/沙箱等): 页面请求发生在这些进程,
+        // 仅安装抓包(MTOP/ariver) hook, 不跑任何模型/任务逻辑。
+        if (!ClassUtil.PACKAGE_NAME.equals(lpparam.processName)) {
+            handleSubProcessLoadPackage(lpparam.classLoader);
+            return;
+        }
+        if (hooked) {
+            return;
+        }
+        classLoader = lpparam.classLoader;
 
             XHelpers.findAndHookMethod(Application.class, "attach", Context.class, new XC_MethodHook() {
                 @Override
@@ -468,7 +477,6 @@ public class ApplicationHook {
             hooked = true;
             Log.i(TAG, "load success: " + lpparam.packageName);
         }
-    }
 
     private static void setWakenAtTimeAlarm() {
         try {
@@ -823,22 +831,69 @@ public class ApplicationHook {
     }
 
     /**
+     * 支付宝子进程(小程序容器/沙箱等)入口: 仅安装抓包 hook, 不跑模型/任务。
+     * 小程序页面(如饿了么果园)自动发起的任务/签到请求发生在这些进程, 主进程 hook 覆盖不到,
+     * 这里把所有支付宝进程统一纳入 MTOP/ariver 抓包范围。
+     */
+    private static void handleSubProcessLoadPackage(final ClassLoader cl) {
+        try {
+            classLoader = cl;
+            try {
+                AppConfig.load();
+            } catch (Throwable ignored) {
+            }
+            if (!AppConfig.INSTANCE.getEnableMtopDumpLog()) {
+                Log.mtop("[HOOK:" + processName + "] mtop dump switch off, skip sub-process");
+                return;
+            }
+            installMtopDumpHooks(cl);
+            // 容器 rpc 需 Nebula 就绪后才有真实实现类, 延迟并重试安装 ariver hook
+            if (mainHandler == null) {
+                mainHandler = new Handler(Looper.getMainLooper());
+            }
+            final Runnable retryRunnable = new Runnable() {
+                private int remain = 4;
+
+                @Override
+                public void run() {
+                    if (ariverDumpUnhook != null) {
+                        return;
+                    }
+                    installAriverDumpHooks(cl);
+                    if (ariverDumpUnhook == null && remain-- > 0) {
+                        mainHandler.postDelayed(this, 8000);
+                    }
+                }
+            };
+            mainHandler.postDelayed(retryRunnable, 4000);
+        } catch (Throwable t) {
+            Log.i(TAG, "handleSubProcessLoadPackage err:");
+            Log.printStackTrace(TAG, t);
+        }
+    }
+
+    /**
      * hook mtopsdk MtopBuilder.syncRequest：打印 MTOP 请求参数与响应(无需 root 抓包工具)。
      * 走宿主合法登录态/wua，自动覆盖支付宝内全部 mtop(含 customDomain=mtop.ele.me 的饿了么链路)。
      * 仅记录不改动请求/响应，绝不干扰业务。
      */
     private static void installMtopDumpHooks() {
+        installMtopDumpHooks(classLoader);
+    }
+
+    /** 带 ClassLoader 版本, 供子进程(容器/沙箱)独立安装 MTOP 抓包 hook。 */
+    private static void installMtopDumpHooks(ClassLoader cl) {
         if (mtopDumpHooksInstalled) {
-            Log.mtop("[HOOK] mtop dump hooks already installed, skip");
+            Log.mtop("[HOOK:" + processName + "] mtop dump hooks already installed, skip");
             return;
         }
         try {
-            Class<?> mtopBuilderClazz = XHelpers.findClassIfExists("mtopsdk.mtop.intf.MtopBuilder", classLoader);
+            Class<?> mtopBuilderClazz = XHelpers.findClassIfExists("mtopsdk.mtop.intf.MtopBuilder", cl);
             if (mtopBuilderClazz == null) {
-                Log.mtop("[HOOK] mtopsdk.mtop.intf.MtopBuilder NOT found, mtop dump unavailable");
+                Log.mtop("[HOOK:" + processName + "] mtopsdk.mtop.intf.MtopBuilder NOT found, mtop dump unavailable");
                 return;
             }
-            Log.mtop("[HOOK] installing mtop dump hooks -> " + mtopBuilderClazz.getName());
+            Log.mtop("[HOOK:" + processName + "] installing mtop dump hooks -> " + mtopBuilderClazz.getName());
             mtopDumpUnhook = XHelpers.findAndHookMethod(
                     mtopBuilderClazz, "syncRequest",
                     new XC_MethodHook() {
@@ -878,10 +933,33 @@ public class ApplicationHook {
                             }
                         }
                     });
+            // 异步入口 asyncRequest(小程序/业务常走异步回调), 打印请求参数
+            try {
+                mtopDumpUnhook = XHelpers.findAndHookMethod(
+                        mtopBuilderClazz, "asyncRequest",
+                        new XC_MethodHook() {
+                            @Override
+                            protected void beforeHookedMethod(MethodHookParam param) throws Throwable {
+                                try {
+                                    Object req = getMtopRequest(param.thisObject);
+                                    if (req == null) {
+                                        return;
+                                    }
+                                    String api = safeStr(XHelpers.callMethod(req, "getApiName"));
+                                    String ver = safeStr(XHelpers.callMethod(req, "getVersion"));
+                                    String data = safeStr(XHelpers.callMethod(req, "getData"));
+                                    Log.mtop("\n[MTOP REQ] api=" + api + " v=" + ver + "\n" + data);
+                                } catch (Throwable t) {
+                                    Log.printStackTrace(t);
+                                }
+                            }
+                        });
+            } catch (Throwable ignore) {
+            }
             mtopDumpHooksInstalled = true;
-            Log.mtop("[HOOK] mtop dump hooks installed OK");
+            Log.mtop("[HOOK:" + processName + "] mtop dump hooks installed OK");
             Log.i(TAG, "install mtop dump hooks successfully");
-            installAriverDumpHooks();
+            installAriverDumpHooks(classLoader);
         } catch (Throwable t) {
             Log.mtop("[HOOK] install mtop dump hooks error: " + t);
             Log.i(TAG, "install mtop dump hooks err:");
@@ -899,17 +977,36 @@ public class ApplicationHook {
      * 因此优先复用 NewRpcBridge 已加载的真实 Method 作为挂点，避免 hook 接口不生效。
      */
     private static void installAriverDumpHooks() {
+        installAriverDumpHooks(classLoader);
+    }
+
+    /** 带 ClassLoader 版本, 支持子进程(容器/沙箱)独立定位并安装 ariver rpc 抓包 hook。 */
+    private static void installAriverDumpHooks(ClassLoader cl) {
         if (ariverDumpUnhook != null) {
             return;
         }
         try {
             Method target = null;
-            if (rpcBridge instanceof NewRpcBridge) {
+            boolean subProc = processName == null || !ClassUtil.PACKAGE_NAME.equals(processName);
+            if (subProc) {
+                // 子进程: 尝试独立加载 NewRpcBridge 拿真实实现方法(容器进程 Nebula 就绪后有效)
+                try {
+                    NewRpcBridge nb = new NewRpcBridge();
+                    nb.load();
+                    target = nb.getRpcCallMethod();
+                } catch (Throwable t) {
+                    Log.mtop("[HOOK:" + processName + "] ariver load real method err: " + t);
+                    Log.printStackTrace(TAG, t);
+                }
+            } else if (rpcBridge instanceof NewRpcBridge) {
                 target = ((NewRpcBridge) rpcBridge).getRpcCallMethod();
             }
-            if (target == null) {
+            if (target == null && subProc) {
+                // 子进程不 fallback 接口类(已验证接口 hook 不生效), 保持 null 以让延迟重试换真实方法
+                Log.mtop("[HOOK:" + processName + "] ariver real method not ready yet, will retry later");
+            } else if (target == null) {
                 Log.i(TAG, "NewRpcBridge rpc method not ready, try extend class lookup");
-                Class<?> extClazz = XHelpers.findClassIfExists("com.alibaba.ariver.commonability.network.rpc.RpcBridgeExtension", classLoader);
+                Class<?> extClazz = XHelpers.findClassIfExists("com.alibaba.ariver.commonability.network.rpc.RpcBridgeExtension", cl);
                 if (extClazz != null) {
                     for (Method m : extClazz.getDeclaredMethods()) {
                         if ("rpc".equals(m.getName()) && m.getParameterTypes().length == 16) {
@@ -928,10 +1025,12 @@ public class ApplicationHook {
                 }
             }
             if (target == null) {
-                Log.mtop("[HOOK] Cannot locate RpcBridgeExtension.rpc(16args) method, ariver rpc dump unavailable");
+                if (!subProc) {
+                    Log.mtop("[HOOK:" + processName + "] Cannot locate RpcBridgeExtension.rpc(16args) method, ariver rpc dump unavailable");
+                }
                 return;
             }
-            Log.mtop("[HOOK] ariver rpc hook target -> " + target.getDeclaringClass().getName() + "#" + target.getName());
+            Log.mtop("[HOOK:" + processName + "] ariver rpc hook target -> " + target.getDeclaringClass().getName() + "#" + target.getName());
             final ClassLoader hostLoader = target.getDeclaringClass().getClassLoader();
             ariverDumpUnhook = XHelpers.hookMember(target, new XC_MethodHook() {
                 @Override
@@ -991,10 +1090,10 @@ public class ApplicationHook {
                 }
             });
             if (ariverDumpUnhook != null) {
-                Log.mtop("[HOOK] ariver rpc dump hooks installed OK");
+                Log.mtop("[HOOK:" + processName + "] ariver rpc dump hooks installed OK");
                 Log.i(TAG, "install ariver rpc dump hooks successfully");
             } else {
-                Log.mtop("[HOOK] ariver rpc dump hook returned null, may not be installed");
+                Log.mtop("[HOOK:" + processName + "] ariver rpc dump hook returned null, may not be installed");
             }
         } catch (Throwable t) {
             Log.mtop("[HOOK] install ariver rpc dump hooks error: " + t);
