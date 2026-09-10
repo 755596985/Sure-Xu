@@ -150,6 +150,12 @@ public class ApplicationHook {
 
     private static volatile boolean captureHooksInstalled = false;
 
+    // MTOP 开关联动安装的 okhttp/WebView 抓包标志(与 base 通道相互独立, 避免互跳)
+    private static volatile boolean captureHooksInstalledMtop = false;
+
+    // HTTP 层最近打印记录, 用于去重(MTOP 层与 okhttp 层可能同时命中同一请求)
+    private static volatile String lastHttpCaptureKey = "";
+
     // mtop 接口抓包(请求参数/响应) hook 句柄与安装标记
     private static XC_MethodHook.Unhook mtopDumpUnhook;
 
@@ -695,6 +701,8 @@ public class ApplicationHook {
                     com.surexu.sesame.data.AppConfig.INSTANCE.setEnableMtopDumpLog(true);
                     com.surexu.sesame.data.AppConfig.save();
                     installMtopDumpHooks();
+                    // mtop 开关联动: 同时挂 okhttp/WebView 层抓包(日志并入 MTOP 页), 双通道覆盖
+                    installHttpCaptureHooks(true);
                 }
                 NotificationUtil.start(service);
                 Model.bootAllModel(classLoader);
@@ -723,10 +731,27 @@ public class ApplicationHook {
      * 原有 ariver 抓包钩子抓不到这些请求,这里补上一个网络层与 WebView 层的抓包。
      */
     private static void installHttpCaptureHooks() {
-        if (captureHooksInstalled) {
-            return;
+        installHttpCaptureHooks(false);
+    }
+
+    /**
+     * 通用 HTTP/WebView 层抓包安装。
+     * useMtop=true 时由「MTOP 抓包」开关联动触发, 日志并入 MTOP 抓包页(mtopLogger),
+     * 用于兜底覆盖不走 mtopsdk(MtopBuilder) 的 HTTP 链路(如 transport/okhttp 直连)——双通道任一命中即可看到请求。
+     */
+    private static void installHttpCaptureHooks(final boolean useMtop) {
+        if (useMtop) {
+            if (captureHooksInstalledMtop) {
+                return;
+            }
+            captureHooksInstalledMtop = true;
+            Log.mtop("[HOOK:" + processName + "] install HTTP/WebView layer capture (mtop-linked)");
+        } else {
+            if (captureHooksInstalled) {
+                return;
+            }
+            captureHooksInstalled = true;
         }
-        captureHooksInstalled = true;
 
         // 1) WebViewClient.shouldInterceptRequest —— 抓取 H5 页面发起的网络请求(URL 级别)
         try {
@@ -743,7 +768,7 @@ public class ApplicationHook {
                                 }
                                 String url = String.valueOf(XHelpers.callMethod(req, "getUrl"));
                                 String method = String.valueOf(XHelpers.callMethod(req, "getMethod"));
-                                Log.debug("[WebView] " + method + " " + url + "\n");
+                                logHttpCaptureLine(useMtop, "[WebView] " + method + " " + url + "\n");
                             } catch (Throwable t) {
                                 Log.printStackTrace(t);
                             }
@@ -765,13 +790,34 @@ public class ApplicationHook {
                             @Override
                             protected void afterHookedMethod(MethodHookParam param) throws Throwable {
                                 try {
-                                    addOkHttpCaptureInterceptor(param.getResult());
+                                    addOkHttpCaptureInterceptor(param.getResult(), useMtop);
                                 } catch (Throwable t) {
                                     Log.printStackTrace(t);
                                 }
                             }
                         });
                 Log.i(TAG, "hook okhttp newBuilder successfully");
+                // 兜底: 直接 new OkHttpClient.Builder() 而非经 newBuilder 的构建路径,
+                // hook 无参构造, 确保任何 client 构建都能挂上抓包 Interceptor
+                try {
+                    Class<?> okHttpBuilderClazz = XHelpers.findClassIfExists("okhttp3.OkHttpClient$Builder", classLoader);
+                    if (okHttpBuilderClazz != null) {
+                        XHelpers.findAndHookConstructor(okHttpBuilderClazz, new XC_MethodHook() {
+                            @Override
+                            protected void afterHookedMethod(MethodHookParam param) throws Throwable {
+                                try {
+                                    addOkHttpCaptureInterceptor(param.thisObject, useMtop);
+                                } catch (Throwable t) {
+                                    Log.printStackTrace(t);
+                                }
+                            }
+                        });
+                        Log.i(TAG, "hook OkHttpClient.Builder() ctor successfully");
+                    }
+                } catch (Throwable t) {
+                    Log.i(TAG, "hook okhttp builder ctor err:");
+                    Log.printStackTrace(TAG, t);
+                }
             } else {
                 Log.i(TAG, "okhttp3.OkHttpClient not found, skip okhttp capture");
             }
@@ -786,7 +832,7 @@ public class ApplicationHook {
      * 借用反射调用 Builder.addInterceptor(Interceptor),Interceptor 接口本身用无参的
      * {@link InvocationHandler} 动态代理实现,避免直接依赖 okhttp3 类型。
      */
-    private static void addOkHttpCaptureInterceptor(Object builder) throws Throwable {
+    private static void addOkHttpCaptureInterceptor(Object builder, boolean useMtop) throws Throwable {
         if (builder == null) {
             return;
         }
@@ -818,7 +864,12 @@ public class ApplicationHook {
                                     code = String.valueOf(XHelpers.callMethod(response, "code"));
                                 } catch (Throwable ignore) {
                                 }
-                                Log.debug("[HTTP] " + methodName + " " + url + " → " + code + "\n");
+                                // mtop 层与 okhttp 层可能同时命中同一请求, 连续重复则去重
+                                String key = methodName + " " + url;
+                                if (!key.equals(lastHttpCaptureKey)) {
+                                    lastHttpCaptureKey = key;
+                                    logHttpCaptureLine(useMtop, "[HTTP] " + methodName + " " + url + " → " + code + "\n");
+                                }
                             } catch (Throwable t) {
                                 Log.printStackTrace(t);
                             }
@@ -828,6 +879,15 @@ public class ApplicationHook {
                     }
                 });
         XHelpers.callMethod(builder, "addInterceptor", proxy);
+    }
+
+    /** 抓包行输出: useMtop=true 时并入 MTOP 抓包页, 否则走通用抓包记录(debugLogger)。 */
+    private static void logHttpCaptureLine(boolean useMtop, String line) {
+        if (useMtop) {
+            Log.mtop(line);
+        } else {
+            Log.debug(line);
+        }
     }
 
     /**
@@ -1264,6 +1324,8 @@ public class ApplicationHook {
                     }
                 }
                 captureHooksInstalled = false;
+                captureHooksInstalledMtop = false;
+                lastHttpCaptureKey = "";
                 if (mtopDumpUnhook != null) {
                     try {
                         mtopDumpUnhook.unhook();
@@ -1616,6 +1678,8 @@ public class ApplicationHook {
                                 com.surexu.sesame.data.AppConfig.INSTANCE.setEnableMtopDumpLog(true);
                                 com.surexu.sesame.data.AppConfig.save();
                                 installMtopDumpHooks();
+                                // mtop 开关联动: 同时挂 okhttp/WebView 层抓包(日志并入 MTOP 页), 双通道覆盖
+                                installHttpCaptureHooks(true);
                             }
                             Log.i(TAG, "reload AppConfig from UI");
                         } catch (Throwable th) {
