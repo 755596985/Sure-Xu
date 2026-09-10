@@ -163,6 +163,10 @@ public class ApplicationHook {
     private static XC_MethodHook.Unhook ariverDumpUnhook;
 
     private static volatile boolean mtopDumpHooksInstalled = false;
+    /** MTOP dump 去重窗口: 同一 builder 对象在窗口内只打印一次, 防止 build 兜底与 sync/async 双通道重复刷屏; WeakHashMap 防止对象泄漏。 */
+    private static final Map<Object, Long> mtopDumpRecent =
+            java.util.Collections.synchronizedMap(new java.util.WeakHashMap<Object, Long>());
+    private static final long MTOP_DUMP_DEDUP_MS = 1000L;
 
     private static BroadcastReceiver broadcastReceiver = null;
 
@@ -1024,7 +1028,9 @@ public class ApplicationHook {
                     XHelpers.hookMember(m, new XC_MethodHook() {
                         @Override
                         protected void beforeHookedMethod(MethodHookParam param) throws Throwable {
-                            if (param.args != null && param.args.length > 0 && param.args[0] != null) {
+                            // 仅对真正的 MtopBuilder 参数 dump; Mtop.build 的其它重载(内部创建半成品请求)一律跳过, 避免空 REQ 刷屏
+                            if (param.args != null && param.args.length > 0 && param.args[0] != null
+                                    && param.args[0].getClass().getName().equals("mtopsdk.mtop.intf.MtopBuilder")) {
                                 logMtopRequestDump(param.args[0], "MTOP");
                             }
                         }
@@ -1042,6 +1048,16 @@ public class ApplicationHook {
 
     /** 打印 MTOP 请求的 api/版本/环境字段/完整 dataText(对照外部抓包软件可视化信息)。 */
     private static void logMtopRequestDump(Object builder, String tag) {
+        if (builder == null) {
+            return;
+        }
+        // 同一 builder 对象短时间窗口内只打印一次, 防止 Mtop.build 兜底与 sync/async 发送路径双通道重复刷屏
+        long now = System.currentTimeMillis();
+        Long last = mtopDumpRecent.get(builder);
+        if (last != null && (now - last) < MTOP_DUMP_DEDUP_MS) {
+            return;
+        }
+        mtopDumpRecent.put(builder, now);
         try {
             Object req = getMtopRequest(builder);
             String api = "", ver = "", data = "";
@@ -1053,6 +1069,14 @@ public class ApplicationHook {
             if (data.length() == 0) {
                 data = tryGetStr(builder, "getData");
             }
+            String host = tryGetStr(builder, "getCustomHost", "getCustomDomain");
+            String wua = tryGetStr(builder, "getNeedWua");
+            String ttid = tryGetStr(builder, "getTtid");
+            // 全空过滤: hook 到未配置完成/非 MTOP 的 builder 时什么都不打, 避免空 REQ 刷屏
+            if (api.length() == 0 && ver.length() == 0 && data.length() == 0
+                    && host.length() == 0 && wua.length() == 0 && ttid.length() == 0) {
+                return;
+            }
             StringBuilder sb = new StringBuilder("\n[" + tag + " REQ]");
             if (api.length() > 0) {
                 sb.append(" api=").append(api);
@@ -1060,9 +1084,9 @@ public class ApplicationHook {
             if (ver.length() > 0) {
                 sb.append(" v=").append(ver);
             }
-            sb.append(" host=").append(tryGetStr(builder, "getCustomHost", "getCustomDomain"))
-              .append(" wua=").append(tryGetStr(builder, "getNeedWua"))
-              .append(" ttid=").append(tryGetStr(builder, "getTtid"));
+            sb.append(" host=").append(host)
+              .append(" wua=").append(wua)
+              .append(" ttid=").append(ttid);
             sb.append("\n").append(data);
             Log.mtop(sb.toString());
         } catch (Throwable t) {
