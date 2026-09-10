@@ -678,7 +678,11 @@ public class ApplicationHook {
                     }
                 }
                 // mtop 接口抓包:独立开关,与 HTTP/WebView 抓包无关,无需 root 抓包工具
-                boolean mtopDumpEnabled = BaseModel.getNewRpc().getValue() && BaseModel.getMtopDump().getValue();
+                // 注意:判断以 AppConfig.enableMtopDumpLog 为准(UI 开关写入的存储),
+                // 兼容旧 BaseModel.mtopDump 动态字段(开过则同步到 AppConfig)——
+                // 否则用户在 UI 开开关但 hook 永不安装,MTOP 抓包页永远空白。
+                boolean mtopDumpEnabled = com.surexu.sesame.data.AppConfig.INSTANCE.getEnableMtopDumpLog()
+                        || (BaseModel.getNewRpc().getValue() && BaseModel.getMtopDump().getValue());
                 if (mtopDumpEnabled) {
                     com.surexu.sesame.data.AppConfig.INSTANCE.setEnableMtopDumpLog(true);
                     com.surexu.sesame.data.AppConfig.save();
@@ -825,14 +829,16 @@ public class ApplicationHook {
      */
     private static void installMtopDumpHooks() {
         if (mtopDumpHooksInstalled) {
+            Log.mtop("[HOOK] mtop dump hooks already installed, skip");
             return;
         }
         try {
             Class<?> mtopBuilderClazz = XHelpers.findClassIfExists("mtopsdk.mtop.intf.MtopBuilder", classLoader);
             if (mtopBuilderClazz == null) {
-                Log.i(TAG, "mtopsdk.mtop.intf.MtopBuilder not found, skip mtop dump");
+                Log.mtop("[HOOK] mtopsdk.mtop.intf.MtopBuilder NOT found, mtop dump unavailable");
                 return;
             }
+            Log.mtop("[HOOK] installing mtop dump hooks -> " + mtopBuilderClazz.getName());
             mtopDumpUnhook = XHelpers.findAndHookMethod(
                     mtopBuilderClazz, "syncRequest",
                     new XC_MethodHook() {
@@ -873,9 +879,11 @@ public class ApplicationHook {
                         }
                     });
             mtopDumpHooksInstalled = true;
+            Log.mtop("[HOOK] mtop dump hooks installed OK");
             Log.i(TAG, "install mtop dump hooks successfully");
             installAriverDumpHooks();
         } catch (Throwable t) {
+            Log.mtop("[HOOK] install mtop dump hooks error: " + t);
             Log.i(TAG, "install mtop dump hooks err:");
             Log.printStackTrace(TAG, t);
         }
@@ -886,37 +894,45 @@ public class ApplicationHook {
      * 覆盖支付宝小程序(my.call / XRiver)里以 operationType+requestData 发起的容器 RPC，
      * 如 alipay.openservice.yao.* 这类不走 mtopsdk MtopBuilder 的请求。
      * 与 MTOP dump 同一开关，仅记录不改动请求/响应。
+     *
+     * <p>注意：RpcBridgeExtension 为接口，真实 rpc 方法在实现类(BridgeExtension 实例)上；
+     * 因此优先复用 NewRpcBridge 已加载的真实 Method 作为挂点，避免 hook 接口不生效。
      */
     private static void installAriverDumpHooks() {
         if (ariverDumpUnhook != null) {
             return;
         }
         try {
-            Class<?> extClazz = XHelpers.findClassIfExists("com.alibaba.ariver.commonability.network.rpc.RpcBridgeExtension", classLoader);
-            if (extClazz == null) {
-                Log.i(TAG, "RpcBridgeExtension not found, skip ariver rpc dump");
-                return;
-            }
             Method target = null;
-            for (Method m : extClazz.getDeclaredMethods()) {
-                if ("rpc".equals(m.getName()) && m.getParameterTypes().length == 16) {
-                    target = m;
-                    break;
-                }
+            if (rpcBridge instanceof NewRpcBridge) {
+                target = ((NewRpcBridge) rpcBridge).getRpcCallMethod();
             }
             if (target == null) {
-                for (Method m : extClazz.getMethods()) {
-                    if ("rpc".equals(m.getName()) && m.getParameterTypes().length == 16) {
-                        target = m;
-                        break;
+                Log.i(TAG, "NewRpcBridge rpc method not ready, try extend class lookup");
+                Class<?> extClazz = XHelpers.findClassIfExists("com.alibaba.ariver.commonability.network.rpc.RpcBridgeExtension", classLoader);
+                if (extClazz != null) {
+                    for (Method m : extClazz.getDeclaredMethods()) {
+                        if ("rpc".equals(m.getName()) && m.getParameterTypes().length == 16) {
+                            target = m;
+                            break;
+                        }
+                    }
+                    if (target == null) {
+                        for (Method m : extClazz.getMethods()) {
+                            if ("rpc".equals(m.getName()) && m.getParameterTypes().length == 16) {
+                                target = m;
+                                break;
+                            }
+                        }
                     }
                 }
             }
             if (target == null) {
-                Log.i(TAG, "no RpcBridgeExtension.rpc(16args) method found, skip ariver rpc dump");
+                Log.mtop("[HOOK] Cannot locate RpcBridgeExtension.rpc(16args) method, ariver rpc dump unavailable");
                 return;
             }
-            final ClassLoader hostLoader = extClazz.getClassLoader();
+            Log.mtop("[HOOK] ariver rpc hook target -> " + target.getDeclaringClass().getName() + "#" + target.getName());
+            final ClassLoader hostLoader = target.getDeclaringClass().getClassLoader();
             ariverDumpUnhook = XHelpers.hookMember(target, new XC_MethodHook() {
                 @Override
                 protected void beforeHookedMethod(MethodHookParam param) throws Throwable {
@@ -975,9 +991,13 @@ public class ApplicationHook {
                 }
             });
             if (ariverDumpUnhook != null) {
+                Log.mtop("[HOOK] ariver rpc dump hooks installed OK");
                 Log.i(TAG, "install ariver rpc dump hooks successfully");
+            } else {
+                Log.mtop("[HOOK] ariver rpc dump hook returned null, may not be installed");
             }
         } catch (Throwable t) {
+            Log.mtop("[HOOK] install ariver rpc dump hooks error: " + t);
             Log.i(TAG, "install ariver rpc dump hooks err:");
             Log.printStackTrace(TAG, t);
         }
@@ -1408,7 +1428,8 @@ public class ApplicationHook {
                                 installHttpCaptureHooks();
                             }
                             // mtop 接口抓包头是否开启:UI 修改开关后即时重装/卸载钩子
-                            boolean mtopDumpEnabled = BaseModel.getNewRpc().getValue() && BaseModel.getMtopDump().getValue();
+                            // 以 AppConfig 为准(UI 开关写入对象),勿读 BaseModel 动态字段
+                            boolean mtopDumpEnabled = com.surexu.sesame.data.AppConfig.INSTANCE.getEnableMtopDumpLog();
                             if (mtopDumpEnabled) {
                                 com.surexu.sesame.data.AppConfig.INSTANCE.setEnableMtopDumpLog(true);
                                 com.surexu.sesame.data.AppConfig.save();

@@ -104,6 +104,11 @@ public class NewRpcBridge implements RpcBridge {
         loader = null;
     }
 
+    /** 暴露容器 RPC 真实调用方法(实现类上的 rpc)，供抓包 hook 复用同一挂点。 */
+    public Method getRpcCallMethod() {
+        return newRpcCallMethod;
+    }
+
     public String requestString(RpcEntity rpcEntity, int tryCount, int retryInterval) {
         RpcEntity resRpcEntity = requestObject(rpcEntity, tryCount, retryInterval);
         if (resRpcEntity != null) {
