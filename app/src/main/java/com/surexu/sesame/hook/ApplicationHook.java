@@ -890,82 +890,165 @@ public class ApplicationHook {
         try {
             Class<?> mtopBuilderClazz = XHelpers.findClassIfExists("mtopsdk.mtop.intf.MtopBuilder", cl);
             if (mtopBuilderClazz == null) {
-                Log.mtop("[HOOK:" + processName + "] mtopsdk.mtop.intf.MtopBuilder NOT found, mtop dump unavailable");
+                Log.mtop("[HOOK:" + processName + "] mtopsdk.mtop.intf.MtopBuilder NOT found, try Mtop.build fallback");
+                hookMtopBuild(cl);
+                mtopDumpHooksInstalled = true;
+                Log.mtop("[HOOK:" + processName + "] mtop dump (build-only) hooks installed");
                 return;
             }
             Log.mtop("[HOOK:" + processName + "] installing mtop dump hooks -> " + mtopBuilderClazz.getName());
-            mtopDumpUnhook = XHelpers.findAndHookMethod(
-                    mtopBuilderClazz, "syncRequest",
-                    new XC_MethodHook() {
-                        @Override
-                        protected void beforeHookedMethod(MethodHookParam param) throws Throwable {
-                            try {
-                                Object req = getMtopRequest(param.thisObject);
-                                if (req == null) {
-                                    return;
-                                }
-                                String api = safeStr(XHelpers.callMethod(req, "getApiName"));
-                                String ver = safeStr(XHelpers.callMethod(req, "getVersion"));
-                                String data = safeStr(XHelpers.callMethod(req, "getData"));
-                                Log.mtop("\n[MTOP REQ] api=" + api + " v=" + ver + "\n" + data);
-                            } catch (Throwable t) {
-                                Log.printStackTrace(t);
-                            }
-                        }
-
-                        @Override
-                        protected void afterHookedMethod(MethodHookParam param) throws Throwable {
-                            try {
-                                Object resp = param.getResult();
-                                if (resp == null) {
-                                    return;
-                                }
-                                StringBuilder sb = new StringBuilder("\n[MTOP RESP]");
-                                sb.append(" retCode=").append(safeStr(XHelpers.callMethod(resp, "getRetCode")));
-                                sb.append(" retMsg=").append(safeStr(XHelpers.callMethod(resp, "getRetMsg")));
-                                try {
-                                    sb.append("\n").append(safeStr(XHelpers.callMethod(resp, "getDataJsonObject")));
-                                } catch (Throwable ignore) {
-                                }
-                                Log.mtop(sb.toString());
-                            } catch (Throwable t) {
-                                Log.printStackTrace(t);
-                            }
-                        }
-                    });
-            // 异步入口 asyncRequest(小程序/业务常走异步回调), 打印请求参数
-            try {
-                mtopDumpUnhook = XHelpers.findAndHookMethod(
-                        mtopBuilderClazz, "asyncRequest",
-                        new XC_MethodHook() {
-                            @Override
-                            protected void beforeHookedMethod(MethodHookParam param) throws Throwable {
-                                try {
-                                    Object req = getMtopRequest(param.thisObject);
-                                    if (req == null) {
-                                        return;
-                                    }
-                                    String api = safeStr(XHelpers.callMethod(req, "getApiName"));
-                                    String ver = safeStr(XHelpers.callMethod(req, "getVersion"));
-                                    String data = safeStr(XHelpers.callMethod(req, "getData"));
-                                    Log.mtop("\n[MTOP REQ] api=" + api + " v=" + ver + "\n" + data);
-                                } catch (Throwable t) {
-                                    Log.printStackTrace(t);
-                                }
-                            }
-                        });
-            } catch (Throwable ignore) {
-            }
+            // 1) MtopBuilder 上所有 sync/async 发送重载(不限参数个数/签名), 任意路径都能命中
+            int overloads = hookAllMtopSendMethods(mtopBuilderClazz);
+            // 2) 兜底: 静态 Mtop.build(MtopBuilder), 所有请求必经的构建工厂(兼容版本差异)
+            hookMtopBuild(cl);
             mtopDumpHooksInstalled = true;
-            Log.mtop("[HOOK:" + processName + "] mtop dump hooks installed OK");
+            Log.mtop("[HOOK:" + processName + "] mtop dump hooks installed OK, sendOverloads=" + overloads);
             Log.i(TAG, "install mtop dump hooks successfully");
-            installAriverDumpHooks(classLoader);
+            installAriverDumpHooks(cl);
         } catch (Throwable t) {
             Log.mtop("[HOOK] install mtop dump hooks error: " + t);
             Log.i(TAG, "install mtop dump hooks err:");
             Log.printStackTrace(TAG, t);
         }
     }
+
+    /** MtopBuilder 上名为 syncRequest/asyncRequest(含各类重载/变体) 的全部方法逐一挂 hook。 */
+    private static int hookAllMtopSendMethods(Class<?> clazz) {
+        int hooked = 0;
+        try {
+            for (java.lang.reflect.Method m : clazz.getDeclaredMethods()) {
+                String n = m.getName();
+                if (!n.equals("syncRequest") && !n.equals("asyncRequest")
+                        && !n.startsWith("syncRequest") && !n.startsWith("asyncRequest")) {
+                    continue;
+                }
+                try {
+                    m.setAccessible(true);
+                    XHelpers.hookMember(m, new XC_MethodHook() {
+                        @Override
+                        protected void beforeHookedMethod(MethodHookParam param) throws Throwable {
+                            logMtopRequestDump(param.thisObject, "MTOP");
+                        }
+
+                        @Override
+                        protected void afterHookedMethod(MethodHookParam param) throws Throwable {
+                            logMtopResponseDump(param);
+                        }
+                    });
+                    hooked++;
+                    Log.mtop("[HOOK:" + processName + "] hook MtopBuilder." + n + "(" + m.getParameterCount() + "args)");
+                } catch (Throwable t) {
+                    Log.mtop("[HOOK] hook overload " + n + " err: " + t);
+                }
+            }
+        } catch (Throwable t) {
+            Log.mtop("[HOOK] enumerate MtopBuilder methods err: " + t);
+        }
+        return hooked;
+    }
+
+    /** 兜底: hook 静态 Mtop.build(MtopBuilder), 保证任何版本/任何发送路径都能捕获请求。 */
+    private static void hookMtopBuild(ClassLoader cl) {
+        try {
+            Class<?> mtopClazz = XHelpers.findClassIfExists("mtopsdk.mtop.intf.Mtop", cl);
+            if (mtopClazz == null) {
+                return;
+            }
+            int hooked = 0;
+            for (java.lang.reflect.Method m : mtopClazz.getDeclaredMethods()) {
+                if (!m.getName().equals("build") || !java.lang.reflect.Modifier.isStatic(m.getModifiers())) {
+                    continue;
+                }
+                try {
+                    m.setAccessible(true);
+                    XHelpers.hookMember(m, new XC_MethodHook() {
+                        @Override
+                        protected void beforeHookedMethod(MethodHookParam param) throws Throwable {
+                            if (param.args != null && param.args.length > 0 && param.args[0] != null) {
+                                logMtopRequestDump(param.args[0], "MTOP");
+                            }
+                        }
+                    });
+                    hooked++;
+                } catch (Throwable t) {
+                    Log.mtop("[HOOK] hook Mtop.build err: " + t);
+                }
+            }
+            Log.mtop("[HOOK:" + processName + "] hook Mtop.build fallback overloads=" + hooked);
+        } catch (Throwable t) {
+            Log.mtop("[HOOK] locate Mtop.build err: " + t);
+        }
+    }
+
+    /** 打印 MTOP 请求的 api/版本/环境字段/完整 dataText(对照外部抓包软件可视化信息)。 */
+    private static void logMtopRequestDump(Object builder, String tag) {
+        try {
+            Object req = getMtopRequest(builder);
+            String api = "", ver = "", data = "";
+            if (req != null) {
+                api = tryGetStr(req, "getApiName");
+                ver = tryGetStr(req, "getVersion");
+                data = tryGetStr(req, "getData");
+            }
+            if (data.length() == 0) {
+                data = tryGetStr(builder, "getData");
+            }
+            StringBuilder sb = new StringBuilder("\n[" + tag + " REQ]");
+            if (api.length() > 0) {
+                sb.append(" api=").append(api);
+            }
+            if (ver.length() > 0) {
+                sb.append(" v=").append(ver);
+            }
+            sb.append(" host=").append(tryGetStr(builder, "getCustomHost", "getCustomDomain"))
+              .append(" wua=").append(tryGetStr(builder, "getNeedWua"))
+              .append(" ttid=").append(tryGetStr(builder, "getTtid"));
+            sb.append("\n").append(data);
+            Log.mtop(sb.toString());
+        } catch (Throwable t) {
+            Log.printStackTrace(t);
+        }
+    }
+
+    /** 打印 MTOP 同步响应(异步无返回值时自动跳过)。 */
+    private static void logMtopResponseDump(XC_MethodHook.MethodHookParam param) {
+        try {
+            Object resp = param.getResult();
+            if (resp == null) {
+                return;
+            }
+            StringBuilder sb = new StringBuilder("\n[MTOP RESP]");
+            sb.append(" retCode=").append(safeStr(XHelpers.callMethod(resp, "getRetCode")));
+            sb.append(" retMsg=").append(safeStr(XHelpers.callMethod(resp, "getRetMsg")));
+            try {
+                Object djson = XHelpers.callMethod(resp, "getDataJsonObject");
+                sb.append("\n").append(safeStr(djson));
+            } catch (Throwable ignore) {
+            }
+            Log.mtop(sb.toString());
+        } catch (Throwable t) {
+            Log.printStackTrace(t);
+        }
+    }
+
+    /** 依次调用多个候选 getter, 返回第一个非空值的字符串形式; 全部失败返回空串。 */
+    private static String tryGetStr(Object obj, String... getterNames) {
+        if (obj == null) {
+            return "";
+        }
+        for (String gn : getterNames) {
+            try {
+                Object v = XHelpers.callMethod(obj, gn);
+                if (v != null) {
+                    return safeStr(v);
+                }
+            } catch (Throwable ignore) {
+            }
+        }
+        return "";
+    }
+
+
 
     /**
      * hook ariver 小程序容器 RPC 出口 RpcBridgeExtension.rpc：
